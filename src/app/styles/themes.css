@@ -1,0 +1,138 @@
+/* Light themes: keep modal shadows readable (scrollbars come from tokens in base.css) */
+:root[data-scheme='light'] .settings-modal,
+:root[data-scheme='light'] .attachment-modal {
+  box-shadow: 0 24px 80px #0003;
+}
+
+/* Gamer RGB theme: the accent tokens read --rgb-hue, which cycles the full wheel */
+@property --rgb-hue {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: true;
+}
+/* Theme cards carry their own theme's tokens, so only RGB cards cycle (even when that theme isn't active) */
+/* Never animate --rgb-hue on :root: every accent token inherits from it, so each tick restyled and repainted the
+   whole app (measured 25 fps / 133 ms frames). :root keeps a fixed hue; only small glowing parts cycle, and they
+   redeclare the accent tokens locally so the change stays inside their own subtree. */
+:root[data-theme='gamer'] {
+  --rgb-hue: 285;
+}
+:root[data-theme='gamer-light'] {
+  --rgb-hue: 265;
+}
+:root[data-theme='gamer']
+  :is(
+    .brand strong,
+    .brand svg,
+    .effects-toggle.on,
+    .send-button,
+    .composer,
+    .user-message .user-content,
+    button:not(.theme-card):not(.danger):not(.btn-danger),
+    .hljs,
+    .selected:not(.theme-card),
+    button.active,
+    button[aria-pressed='true'],
+    button[aria-selected='true'],
+    button[aria-checked='true'],
+    input:checked,
+    :focus-visible,
+    .tool-card.running
+  ),
+:root[data-theme='gamer'] .effects-on::after {
+  --accent: hsl(var(--rgb-hue) 100% 60%);
+  --accent-hover: hsl(var(--rgb-hue) 100% 72%);
+  --accent-soft: hsl(var(--rgb-hue) 100% 60% / 0.08);
+  --accent-line: hsl(var(--rgb-hue) 100% 60% / 0.22);
+  animation-name: rgb-cycle;
+  animation-duration: 2s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+:root[data-theme='gamer-light']
+  :is(
+    .brand strong,
+    .brand svg,
+    .effects-toggle.on,
+    .send-button,
+    .composer,
+    .user-message .user-content,
+    button:not(.theme-card):not(.danger):not(.btn-danger),
+    .hljs,
+    .selected:not(.theme-card),
+    button.active,
+    button[aria-pressed='true'],
+    button[aria-selected='true'],
+    button[aria-checked='true'],
+    input:checked,
+    :focus-visible,
+    .tool-card.running
+  ),
+:root[data-theme='gamer-light'] .effects-on::after {
+  --accent: hsl(var(--rgb-hue) 90% 42%);
+  --accent-hover: hsl(var(--rgb-hue) 90% 34%);
+  --accent-soft: hsl(var(--rgb-hue) 90% 42% / 0.08);
+  --accent-line: hsl(var(--rgb-hue) 90% 42% / 0.25);
+  animation-name: rgb-cycle;
+  animation-duration: 2s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+:root[data-theme^='gamer'] :is(.icon-button, .text-button):not(.danger):not(.btn-danger) {
+  color: var(--accent);
+}
+:root[data-theme^='gamer'] .composer.ignited {
+  --flame-body: hsl(var(--rgb-hue) 100% 55%);
+  --flame-tips: hsl(calc(var(--rgb-hue) + 120) 100% 65%);
+  --flame-deep: hsl(calc(var(--rgb-hue) + 240) 100% 45%);
+  box-shadow: 0 0 24px var(--accent-line), 0 8px 24px #0000002e;
+}
+/* Keep the existing border spin on these while they also cycle colour. */
+:root[data-theme^='gamer'] .composer.ignited {
+  animation:
+    rgb-cycle 2s linear infinite,
+    flame-spin 3s linear infinite;
+}
+:root[data-theme^='gamer'] .effects-on .tool-card.running {
+  animation:
+    rgb-cycle 2s linear infinite,
+    flame-spin 2s linear infinite;
+}
+/* Theme cards carry their own tokens inline, so only the card restyles. */
+.theme-card.rgb {
+  animation: rgb-cycle 2s linear infinite;
+}
+@keyframes rgb-cycle {
+  from {
+    --rgb-hue: 0;
+  }
+  to {
+    --rgb-hue: 360;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme^='gamer']
+    :is(
+      .brand strong,
+      .brand svg,
+      .effects-toggle.on,
+      .send-button,
+      .composer,
+      .user-message .user-content,
+      button:not(.theme-card):not(.danger):not(.btn-danger),
+      .hljs,
+      .selected:not(.theme-card),
+      button.active,
+      button[aria-pressed='true'],
+      button[aria-selected='true'],
+      button[aria-checked='true'],
+      input:checked,
+      :focus-visible,
+      .tool-card.running
+    ),
+  :root[data-theme^='gamer'] .effects-on::after,
+  :root[data-theme^='gamer'] .effects-on .tool-card.running,
+  .theme-card.rgb {
+    animation-duration: 60s;
+  }
+}

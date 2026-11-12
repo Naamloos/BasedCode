@@ -1,0 +1,13 @@
+/* Import order preserves the global cascade. Keep feature overrides after their base rules. */
+@import './styles/base.css';
+@import './styles/layout.css';
+@import './styles/conversation.css';
+@import './styles/workspace.css';
+@import './styles/dialogs.css';
+@import './styles/models.css';
+@import './styles/effects.css';
+@import './styles/responsive.css';
+@import './styles/controls.css';
+@import './styles/themes.css';
+@import './styles/limits.css';
+@import './styles/syntax.css';

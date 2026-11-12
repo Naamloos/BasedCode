@@ -1,0 +1,196 @@
+/* Under 900px: one column; sidebars slide over the chat as drawers with the scrim. */
+.drawer-backdrop {
+  display: none;
+}
+@media (max-width: 900px) {
+  .app-shell,
+  .app-shell.right-hidden,
+  .app-shell.right-wide {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 48px minmax(0, 1fr) var(--terminal-height, 0px) auto;
+  }
+  .workspace-header,
+  .main-panel,
+  .terminal-region,
+  .statusbar {
+    grid-column: 1;
+  }
+  .workspace-header {
+    padding-inline-start: 4px;
+    gap: 2px;
+  }
+  .breadcrumbs > span,
+  .breadcrumbs > svg,
+  .usage-chip,
+  .resize-handle.side {
+    display: none;
+  }
+  .left-sidebar,
+  .right-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(86vw, 320px);
+    box-shadow: var(--shadow-float);
+  }
+  .left-sidebar {
+    inset-inline-start: 0;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    animation: drawer-in-start var(--dur-base) var(--ease-spring);
+  }
+  .right-sidebar {
+    inset-inline-end: 0;
+    width: min(94vw, 480px);
+    animation: drawer-in-end var(--dur-base) var(--ease-spring);
+  }
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: var(--scrim);
+    backdrop-filter: blur(4px);
+    animation: fade-in var(--dur-base) var(--ease-out);
+  }
+  /* Modals must cover the drawers (z-index 30) and their scrim. */
+  .modal-backdrop:not(.confirmation-backdrop):not(.file-picker-backdrop) {
+    z-index: 40;
+  }
+  .form-grid,
+  .model-usage-panel dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@keyframes drawer-in-start {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes drawer-in-end {
+  from {
+    transform: translateX(100%);
+  }
+}
+[dir='rtl'] .left-sidebar {
+  animation-name: drawer-in-end;
+}
+[dir='rtl'] .right-sidebar {
+  animation-name: drawer-in-start;
+}
+
+/* Under 600px: full-bleed chat, 40px targets, modals become bottom sheets. */
+@media (max-width: 600px) {
+  .workspace-header .icon-button,
+  .icon-button {
+    height: var(--row-h-touch);
+    min-width: var(--row-h-touch);
+  }
+  .chat-row,
+  .sidebar-bottom > button,
+  .primary-button,
+  .secondary-button,
+  .suggestion-chips button {
+    min-height: var(--row-h-touch);
+  }
+  .conversation {
+    padding-inline: 12px;
+  }
+  .composer-area {
+    position: sticky;
+    bottom: 0;
+    padding: 0 12px max(12px, env(safe-area-inset-bottom));
+  }
+  .composer textarea {
+    font-size: 16px;
+    min-height: 52px;
+  }
+  .composer-footer {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .user-message .user-content {
+    max-width: 88%;
+  }
+  .statusbar {
+    min-height: 26px;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 3px 10px;
+  }
+  .statusbar .status-divider,
+  .statusbar .status-tool-link {
+    display: none;
+  }
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+  /* Bottom sheet: 16px top corners and a drag handle. */
+  .settings-modal,
+  .small-modal {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border: 0;
+    padding-top: 14px;
+    animation: sheet-in var(--dur-base) var(--ease-spring);
+  }
+  .settings-modal::before,
+  .small-modal::before {
+    content: '';
+    position: absolute;
+    inset-block-start: 6px;
+    inset-inline-start: 50%;
+    width: 36px;
+    height: 4px;
+    margin-inline-start: -18px;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--text) 25%, transparent);
+  }
+  .settings-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .settings-modal,
+  .settings-modal:has(.settings-layout) {
+    height: calc(100dvh - 24px);
+  }
+  .settings-body {
+    flex: 1;
+    padding: 16px;
+  }
+  .modal-header {
+    padding: 12px 16px;
+  }
+  .modal-footer {
+    padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+  .toast {
+    inset-inline: 12px;
+    width: auto;
+    max-width: none;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}

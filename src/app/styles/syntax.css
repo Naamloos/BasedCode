@@ -1,0 +1,104 @@
+/* Gamer syntax inherits a cycling hue from each code block. */
+:root[data-theme^='gamer'] .hljs {
+  --syntax-lightness: 72%;
+}
+:root[data-theme='gamer-light'] .hljs {
+  --syntax-lightness: 32%;
+}
+:root[data-theme^='gamer'] .hljs [class*='hljs-'] {
+  --syntax-offset: 0;
+  color: hsl(calc(var(--rgb-hue) + var(--syntax-offset)) 85% var(--syntax-lightness));
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-keyword, .hljs-doctag, .hljs-type, .hljs-template-tag, .hljs-template-variable) {
+  --syntax-offset: 0;
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-title, .hljs-section) {
+  --syntax-offset: 60;
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-number, .hljs-literal, .hljs-attr, .hljs-attribute, .hljs-meta, .hljs-variable, .hljs-operator) {
+  --syntax-offset: 120;
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-string, .hljs-regexp) {
+  --syntax-offset: 180;
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-built_in, .hljs-symbol, .hljs-bullet) {
+  --syntax-offset: 240;
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id) {
+  --syntax-offset: 300;
+}
+:root[data-theme^='gamer'] .hljs :is(.hljs-comment, .hljs-code, .hljs-formula, .hljs-subst) {
+  color: var(--muted);
+}
+:root[data-theme^='gamer'] .hljs .hljs-addition {
+  color: var(--success);
+}
+:root[data-theme^='gamer'] .hljs .hljs-deletion {
+  color: var(--danger);
+}
+
+/* highlight.js ships a dark palette; light themes get a GitHub-light one instead */
+:root[data-scheme='light'] .hljs {
+  color: #24292f;
+}
+:root[data-scheme='light']
+  :is(
+    .hljs-doctag,
+    .hljs-keyword,
+    .hljs-meta .hljs-keyword,
+    .hljs-template-tag,
+    .hljs-template-variable,
+    .hljs-type,
+    .hljs-variable.language_
+  ) {
+  color: #cf222e;
+}
+:root[data-scheme='light']
+  :is(.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_) {
+  color: #8250df;
+}
+:root[data-scheme='light']
+  :is(
+    .hljs-attr,
+    .hljs-attribute,
+    .hljs-literal,
+    .hljs-meta,
+    .hljs-number,
+    .hljs-operator,
+    .hljs-variable,
+    .hljs-selector-attr,
+    .hljs-selector-class,
+    .hljs-selector-id
+  ) {
+  color: #0550ae;
+}
+:root[data-scheme='light'] :is(.hljs-regexp, .hljs-string, .hljs-meta .hljs-string) {
+  color: #0a3069;
+}
+:root[data-scheme='light'] :is(.hljs-built_in, .hljs-symbol) {
+  color: #953800;
+}
+:root[data-scheme='light'] :is(.hljs-comment, .hljs-code, .hljs-formula) {
+  color: #57606a;
+}
+:root[data-scheme='light'] :is(.hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo) {
+  color: #116329;
+}
+:root[data-scheme='light'] .hljs-subst {
+  color: #24292f;
+}
+:root[data-scheme='light'] .hljs-section {
+  color: #0550ae;
+  font-weight: bold;
+}
+:root[data-scheme='light'] .hljs-bullet {
+  color: #953800;
+}
+:root[data-scheme='light'] .hljs-addition {
+  color: #116329;
+  background-color: #dafbe1;
+}
+:root[data-scheme='light'] .hljs-deletion {
+  color: #82071e;
+  background-color: #ffebe9;
+}

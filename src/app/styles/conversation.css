@@ -1,0 +1,922 @@
+.slash-popup {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.slash-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+}
+.slash-popup-status {
+  color: var(--muted, var(--text));
+}
+.slash-keys {
+  margin-inline-start: auto;
+  color: var(--muted, var(--text));
+  opacity: 0.8;
+}
+.slash-keys kbd {
+  padding: 0 4px;
+  margin-inline: 1px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+}
+.slash-chip.typing {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.slash-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  align-self: center;
+  margin-inline-start: -4px;
+  background: currentColor;
+  animation: slash-blink 1s steps(1) infinite;
+}
+@keyframes slash-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.slash-commands {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.slash-commands button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: start;
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-inline-start: 3px solid transparent;
+  cursor: pointer;
+}
+.slash-commands button:hover,
+.slash-commands button:focus-visible {
+  background: var(--surface);
+}
+.slash-commands button.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-inline-start-color: var(--accent);
+}
+.slash-name {
+  flex: none;
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+}
+.slash-description {
+  color: var(--muted, var(--text));
+}
+.slash-signature {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted, var(--text));
+  opacity: 0.8;
+}
+.slash-arg-hint {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.slash-arg-hint p {
+  margin: 4px 0 0;
+}
+.slash-arg-hint code.current {
+  font-weight: 700;
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 0 4px;
+  outline: 1px solid var(--border);
+}
+.slash-name mark {
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.slash-arg-hint.invalid {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+.slash-parsed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.slash-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted, var(--text));
+}
+.slash-chip.command {
+  color: var(--accent);
+  font-weight: 700;
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.slash-chip.filled {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--success) 50%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.slash-chip.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.slash-chip.missing {
+  border-style: dashed;
+}
+.slash-chip.error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 60%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  text-decoration: line-through;
+}
+.slash-arg-hint.invalid > .slash-chip.error {
+  text-decoration: none;
+  margin-inline-end: 6px;
+}
+.slash-param {
+  opacity: 0.7;
+}
+.slash-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Messages */
+.message-list {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.message {
+  margin-bottom: var(--space-5);
+}
+.message-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--fs-sm);
+  min-height: 24px;
+}
+.message-label strong {
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+/* Message actions fade in on hover or focus-within, and stay visible on touch. */
+.message-label .text-button,
+.run-actions {
+  opacity: 0;
+  transition: opacity var(--dur-fast) linear;
+}
+.message:hover :is(.message-label .text-button, .run-actions),
+.message:focus-within :is(.message-label .text-button, .run-actions) {
+  opacity: 1;
+}
+@media (hover: none) {
+  .message-label .text-button,
+  .run-actions {
+    opacity: 1;
+  }
+}
+.avatar {
+  height: 24px;
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+.user-avatar {
+  object-fit: cover;
+}
+.agent-avatar {
+  object-fit: contain;
+  border-radius: 0;
+}
+/* A mode switch: a small centered divider line instead of the hand-off prompt bubble. */
+.mode-switch-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.mode-switch-note::before,
+.mode-switch-note::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+/* User messages: a right-aligned accent-tinted bubble. Assistant replies are plain text. */
+.user-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.user-message .user-content {
+  white-space: pre-wrap;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  max-width: 75%;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border: 0;
+  border-radius: var(--radius-md);
+}
+.assistant-message .markdown {
+  padding-inline-start: 0;
+  animation: fade-in var(--dur-fast) linear;
+}
+.reasoning-block {
+  position: relative;
+  margin: 0 0 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 6%, var(--surface)),
+    var(--surface) 60%
+  );
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+.reasoning-block::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(var(--accent), var(--flame-tips, var(--accent-hover)), transparent);
+}
+.reasoning-block > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+.reasoning-block > summary::-webkit-details-marker {
+  display: none;
+}
+.reasoning-block > summary:hover {
+  color: var(--text);
+}
+.reasoning-block > summary > svg:first-child {
+  color: var(--accent);
+}
+.reasoning-block .disclosure {
+  margin-inline-start: auto;
+  color: var(--faint);
+  transition: transform 0.12s;
+}
+.reasoning-block[open] > summary .disclosure {
+  transform: rotate(90deg);
+}
+.reasoning-block[open] > summary {
+  border-bottom: 1px dashed var(--border);
+}
+.assistant-message .reasoning-block .markdown {
+  padding: 10px 14px 12px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted);
+  max-height: 320px;
+  overflow: auto;
+}
+.reasoning-block.thinking .reasoning-title {
+  background: linear-gradient(90deg, var(--muted) 30%, var(--text) 50%, var(--muted) 70%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: wordmark-burn 1.8s linear infinite;
+}
+.reasoning-block.thinking > summary > svg:first-child {
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.effects-on .reasoning-block.thinking {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    conic-gradient(
+        from var(--flame-angle),
+        var(--accent),
+        transparent 35%,
+        var(--flame-tips, var(--accent)) 65%,
+        var(--accent)
+      )
+      border-box;
+  animation: flame-spin 2.5s linear infinite;
+}
+/* Consecutive tool calls fold into one quiet row. */
+.tool-card.tool-group {
+  margin: 6px 0 12px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+.tool-group > summary {
+  height: var(--row-h);
+  gap: 8px;
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+}
+.tool-group > summary:hover {
+  color: var(--text);
+  background: var(--tint-hover);
+}
+.tool-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--tint-hover);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+.tool-group-items {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 8px;
+}
+.tool-group-items .tool-wrap {
+  margin: 0;
+}
+.markdown {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  margin: 20px 0 8px;
+  color: var(--text);
+}
+.markdown p {
+  margin-bottom: 12px;
+}
+.markdown strong {
+  color: var(--text);
+}
+.markdown pre {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+.markdown pre code.hljs {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+.markdown :not(pre) > code {
+  background: var(--surface);
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+  border-radius: var(--radius-xs);
+  font-size: 13px;
+  padding: 1px 5px;
+}
+.markdown a {
+  color: var(--accent);
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 2px;
+}
+.markdown ul,
+.markdown ol {
+  padding-inline-start: 22px;
+}
+.markdown li {
+  margin-bottom: 4px;
+}
+.markdown table {
+  border-collapse: collapse;
+  max-width: 100%;
+  display: block;
+  overflow: auto;
+  font-size: 13px;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: start;
+}
+.markdown blockquote {
+  border-inline-start: 3px solid var(--border-strong);
+  padding-inline-start: 12px;
+  color: var(--muted);
+  margin-inline-start: 0;
+}
+.streaming-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: 2px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.thinking-dots {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.thinking-dots span {
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.system-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 12px 0 20px;
+}
+.system-message > span {
+  min-width: 0;
+}
+.system-message svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.system-message.completion {
+  color: var(--success);
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  border: 0;
+  border-radius: var(--radius-md);
+}
+.tool-wrap {
+  margin: 6px 0 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+.tool-card {
+  border: 0;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  min-width: 0;
+}
+.tool-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row-h);
+  padding: 0 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+.tool-card > summary:hover {
+  background: var(--tint-hover);
+}
+.tool-card > summary > svg:not(.disclosure):not(.spin):not(.success-text):not(.error-text) {
+  color: var(--muted);
+}
+.tool-card summary::-webkit-details-marker {
+  display: none;
+}
+.tool-card .disclosure {
+  color: var(--muted);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.tool-card[open] > summary .disclosure {
+  transform: rotate(90deg);
+}
+.tool-name {
+  text-transform: capitalize;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tool-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.tool-body {
+  padding: 4px 12px 12px;
+  animation: pop-in var(--dur-base) var(--ease-spring);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tool-body pre {
+  overflow: auto;
+  max-height: 300px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 10px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+.mcp-app {
+  border: 0;
+  border-radius: var(--radius-md);
+  margin-top: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.mcp-app > .eyebrow {
+  padding: 10px 12px;
+}
+.mcp-app iframe {
+  width: 100%;
+  border: 0;
+  background: var(--surface);
+}
+
+/* Composer */
+.composer-area {
+  flex-shrink: 0;
+  padding: 0 var(--space-6) var(--space-5);
+  animation: dock var(--dur-base) var(--ease-spring);
+}
+/* The composer shell: filled, borderless, 2px accent ring on focus. */
+.composer {
+  max-width: 760px;
+  margin: 0 auto;
+  border: 0;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  transition: box-shadow var(--dur-fast) linear;
+}
+.composer:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* New chat: the composer sits in the vertical centre, then docks to the bottom on the first send. */
+.main-panel.welcoming .conversation {
+  flex: 0 1 auto;
+  margin-top: auto;
+}
+.main-panel.welcoming .composer-area {
+  margin-bottom: auto;
+  animation: none;
+}
+@keyframes dock {
+  from {
+    transform: translateY(-24px);
+  }
+}
+.composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  max-height: 240px;
+  resize: none;
+  padding: 14px 16px 4px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  box-shadow: none;
+}
+.composer textarea:focus {
+  box-shadow: none;
+}
+.composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px 10px;
+  min-width: 0;
+}
+.composer-footer > * {
+  min-width: 0;
+}
+.composer-footer > .send-button,
+.composer-footer > .queue-button,
+.composer-footer > .icon-button {
+  flex-shrink: 0;
+}
+.composer-footer .composer-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A narrow composer sheds extras instead of overflowing; the essentials (attach, model, send) always stay */
+.composer {
+  container-type: inline-size;
+}
+@container (max-width: 620px) {
+  .composer-hint {
+    display: none;
+  }
+}
+@container (max-width: 500px) {
+  .composer-footer .fallback-badge,
+  .composer-footer .limit-ring-wrap,
+  .composer-footer .model-usage {
+    display: none;
+  }
+}
+@container (max-width: 400px) {
+  .composer-footer .text-button {
+    display: none;
+  }
+  .composer-footer {
+    gap: 4px;
+    padding-inline-start: 6px;
+  }
+}
+.model-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--field);
+  padding-inline: 9px 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  max-width: 280px;
+}
+.model-selector:hover:not(:disabled),
+.model-selector.open {
+  background: var(--tint-hover);
+  color: var(--text);
+}
+.model-selector > svg:last-child {
+  color: var(--faint);
+}
+.model-selector-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--faint);
+}
+.model-dot.ollama {
+  background: var(--success);
+}
+.model-dot.lmstudio {
+  background: #8fb4f0;
+}
+.model-dot.openai {
+  background: var(--success);
+}
+.model-dot.claude {
+  background: var(--accent);
+}
+.composer-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.send-button {
+  height: 32px;
+  width: 32px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  color: var(--on-accent);
+  box-shadow: var(--shadow-btn);
+  display: grid;
+  place-items: center;
+  border: none;
+}
+.send-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.send-button:disabled {
+  background: var(--field);
+  box-shadow: none;
+  color: var(--muted);
+  opacity: 1;
+}
+.run-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  padding: 8px 4px;
+  text-transform: capitalize;
+  max-width: 760px;
+  margin: 0 auto;
+  color: var(--text-secondary);
+}
+
+/* Markdown extras: inline images and Lucide icon shortcodes */
+.markdown img.md-image {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  margin: 8px 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+}
+.markdown .md-icon {
+  display: inline-flex;
+  vertical-align: -0.125em;
+  color: var(--accent);
+}
+
+/* Strips above the composer: comparisons and second opinions for the open chat. */
+.chat-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.chat-strip .spacer {
+  flex: 1;
+}
+.badge-clear {
+  display: inline-flex;
+  margin-inline-start: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Banners, strips and status rows above the composer line up with it instead of spanning the whole column. */
+.composer-area > :not(.composer) {
+  max-width: 760px;
+  margin-inline-start: auto;
+  margin-inline-end: auto;
+}
+
+/* Prompt actions are icon-only (their names are in the tooltips) so the label row never squeezes the name. */
+.message-label strong {
+  white-space: nowrap;
+}
+.message-label .run-usage {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.user-message .message-label > .text-button,
+.user-message .message-label .model-picker > .text-button {
+  font-size: 0;
+  gap: 2px;
+  padding: 4px 5px;
+  flex-shrink: 0;
+}
+.user-message .message-label .model-picker {
+  flex-shrink: 0;
+}
+.message:hover .message-label .model-picker > .text-button,
+.message-label .model-picker:focus-within > .text-button {
+  opacity: 1;
+}
+
+/* Actions for a finished prompt sit under its output, where the eye already is. */
+.run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 2px 0 14px;
+  opacity: 0.75;
+  transition: opacity 0.12s;
+}
+.run-actions:hover,
+.run-actions:focus-within {
+  opacity: 1;
+}
+.run-actions .text-button {
+  padding: 3px 7px;
+}
+
+.reviews-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+.reviews-panel .small {
+  margin: 0;
+}
+.review-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.review-verdict {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.review-of {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-actions {
+  display: flex;
+  gap: 2px;
+}
+.review-actions .danger-text {
+  margin-inline-start: auto;
+  color: var(--danger);
+}
+
+/* Messages fade out at the top and bottom edges of the chat instead of being cut off. */
+.conversation {
+  --fade: 28px;
+  padding-block: calc(var(--fade) + 4px);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--fade),
+    #000 calc(100% - var(--fade)),
+    transparent
+  );
+}

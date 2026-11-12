@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.basedcode-data/
+*.log
+.env
+release/

@@ -1,0 +1,107 @@
+name: Release
+
+# Three ways to publish the Windows installer as a GitHub release:
+#  - Bump "version" in package.json on master: this workflow tags v<version> and releases it.
+#  - Push a tag like v0.2.0 by hand.
+#  - Run this workflow manually (Actions > Release > Run workflow) to build or rebuild the release
+#    for the version in package.json, for example after a failed run.
+# Everything runs in this one workflow because a tag pushed with GITHUB_TOKEN does not trigger other workflows.
+# The in-app updater reads the latest release and downloads its BasedCode-Setup-*.exe asset.
+on:
+  push:
+    branches: [master]
+    paths: [package.json]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out the release tag
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$(node -p "require('./package.json').version")"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          # Skip only when the release already has its installer. A tag without one (an earlier run
+          # failed after tagging) is built again, and a manual run always rebuilds.
+          assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+          if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ]] && grep -q '^BasedCode-Setup-.*\.exe$' <<< "$assets"; then
+            echo "$tag is already released; nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            echo "Created $tag."
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: tag
+    if: needs.tag.outputs.release == 'true'
+    runs-on: windows-latest
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set version from tag
+        shell: bash
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+
+      # Not every Windows runner image ships Inno Setup.
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build installer
+        run: npm run package:win
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.tag }}
+          files: release/BasedCode-Setup-*.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ contains(needs.tag.outputs.tag, '-') }}
+          # A pre-release must not become "latest": the updater only offers the latest full release.
+          make_latest: ${{ !contains(needs.tag.outputs.tag, '-') }}

@@ -1,0 +1,19 @@
+{
+  "name": "basedcode-desktop",
+  "main": "index.html",
+  "nodejs": true,
+  "chromium-args": "--ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --force_high_performance_gpu",
+  "icons": {
+    "256": "icon.png"
+  },
+  "window": {
+    "title": "BasedCode",
+    "icon": "icon.png",
+    "frame": false,
+    "width": 1500,
+    "height": 960,
+    "min_width": 1000,
+    "min_height": 660,
+    "position": "center"
+  }
+}

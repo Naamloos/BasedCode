@@ -1,0 +1,488 @@
+:root {
+  /* ---- Type ---- */
+  --font-ui: 'Manrope Variable', 'Manrope', system-ui, sans-serif;
+  --font-code: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --mono: var(--font-code);
+  --fs-xs: 12px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+  --lh-body: 1.6;
+  --lh-tight: 1.3;
+
+  /* ---- Shape and spacing ---- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --radius: var(--radius-md);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 14px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-8: 24px;
+  --space-10: 32px;
+  --row-h: 32px;
+  --row-h-touch: 40px;
+
+  /* ---- Depth ---- */
+  --shadow-float: 0 8px 32px #0004, 0 2px 6px #0002;
+  --shadow-card: 0 2px 8px #0000001f;
+  --shadow-btn: inset 0 1px 0 #ffffff40, 0 1px 2px #0003;
+
+  /* ---- Motion ---- */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --shimmer-dur: 1.4s;
+
+  /* ---- Default theme (Based); applyAppearance overwrites these ---- */
+  color-scheme: dark;
+  --bg: #0f1013;
+  --surface: #15161a;
+  --surface-raised: #1b1d22;
+  --surface-hover: #22252b;
+  --surface-active: #282b32;
+  --border: #25272d;
+  --border-strong: #33363e;
+  --text: #e3e5ea;
+  --text-secondary: #b3b8c2;
+  --muted: #8a909b;
+  --faint: #636974;
+  --accent: #e6ad77;
+  --accent-hover: #f0bf8f;
+  --accent-soft: #e6ad7714;
+  --accent-line: #e6ad7738;
+  --on-accent: #22180f;
+  --success: #8fd0ab;
+  --warning: #e8c37a;
+  --danger: #f09a9a;
+
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Derived tokens are declared on every element so they follow tokens a subtree redefines (the gamer RGB parts). */
+* {
+  box-sizing: border-box;
+  --accent-hi: color-mix(in srgb, #fff 18%, var(--accent));
+  --tint-hover: color-mix(in srgb, var(--text) 6%, transparent);
+  --tint-press: color-mix(in srgb, var(--text) 10%, transparent);
+  --field: color-mix(in srgb, var(--text) 5%, var(--surface));
+  --selection: color-mix(in srgb, var(--accent) 30%, transparent);
+  --scrim: #00000080;
+}
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) linear,
+    color var(--dur-fast) linear,
+    border-color var(--dur-fast) linear,
+    filter var(--dur-fast) linear,
+    transform var(--dur-fast) var(--ease-out);
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Buttons (opt-in classes; legacy buttons keep their own rules) ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--row-h);
+  padding-inline: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  color: var(--on-accent);
+  box-shadow: var(--shadow-btn);
+}
+.btn-primary:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+.btn-danger {
+  --accent: var(--danger);
+  --on-accent: var(--bg);
+}
+.btn-ghost {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+}
+.btn-ghost:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.btn-ghost.btn-danger {
+  color: var(--danger);
+}
+
+/* Loading: a shimmer sweep, label stays put. */
+[aria-busy='true'] {
+  cursor: progress;
+  position: relative;
+  overflow: hidden;
+}
+button[aria-busy='true']::after,
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, #ffffff40 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: shimmer var(--shimmer-dur) linear infinite;
+  pointer-events: none;
+}
+.btn-ghost[aria-busy='true']::after {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--text) 14%, transparent) 50%,
+    transparent 70%
+  );
+}
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+/* Text shimmer for the "Thinking…" label. */
+.shimmer-text {
+  background: linear-gradient(
+      100deg,
+      var(--muted) 30%,
+      var(--text) 50%,
+      var(--muted) 70%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer var(--shimmer-dur) linear infinite;
+}
+
+/* ---- Inputs: filled, no border, accent ring on focus ---- */
+input,
+select,
+textarea {
+  color: var(--text);
+  background: var(--field);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  min-width: 0;
+  transition: box-shadow var(--dur-fast) linear;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+input:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+textarea {
+  resize: vertical;
+  line-height: var(--lh-body);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+input[type='checkbox'] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+input[type='checkbox']:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+input[type='checkbox']:not(.switch):checked::after {
+  content: '✓';
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+input[type='checkbox']:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The switch (input.switch) lives in controls.css. */
+
+/* Segmented control: a --field track with a sliding raised thumb. Set --seg-count and --seg-index inline. */
+.seg-control {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--field);
+  max-inline-size: 100%;
+}
+.seg-control::before {
+  content: '';
+  position: absolute;
+  inset-block: 3px;
+  inset-inline-start: 3px;
+  inline-size: calc((100% - 6px) / var(--seg-count, 2));
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 2px #0003;
+  transform: translateX(calc(100% * var(--seg-index, 0)));
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+[dir='rtl'] .seg-control::before {
+  transform: translateX(calc(-100% * var(--seg-index, 0)));
+}
+.seg-control > button {
+  position: relative;
+  z-index: 1;
+  min-height: 26px;
+  padding-inline: var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seg-control > button[aria-checked='true'],
+.seg-control > button[aria-selected='true'] {
+  color: var(--text);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+/* Code font with ligatures on (=> != === and friends). */
+pre,
+code,
+kbd,
+.hljs,
+.xterm {
+  font-family: var(--font-code);
+  font-variant-ligatures: contextual common-ligatures;
+  font-feature-settings: 'calt' 1, 'liga' 1;
+}
+pre {
+  font-size: 13px;
+  line-height: var(--lh-body);
+  tab-size: 2;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin-top: 0;
+}
+h1,
+h2,
+h3,
+h4 {
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+h2 {
+  font-size: var(--fs-lg);
+  margin-bottom: 0;
+}
+h3 {
+  font-size: var(--fs-md);
+  margin-bottom: var(--space-2);
+}
+p {
+  line-height: var(--lh-body);
+}
+.section-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+/* ---- Icons ---- */
+svg {
+  flex-shrink: 0;
+}
+
+kbd {
+  font-family: var(--font-code);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  background: var(--field);
+  border: 0;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---- Status pills ---- */
+.pill {
+  --pill: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 20px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--pill) 12%, transparent);
+  color: var(--pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+.pill.success {
+  --pill: var(--success);
+}
+.pill.warning {
+  --pill: var(--warning);
+}
+.pill.danger {
+  --pill: var(--danger);
+}
+.pill.info {
+  --pill: var(--accent);
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--text);
+}
+
+/* ---- Scrollbars: thin overlay thumbs from the text colour, so every theme gets one ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-pill);
+}
+:hover::-webkit-scrollbar-thumb,
+:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 20%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text) 32%, transparent);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Directional icons flip in RTL. */
+[dir='rtl'] :is(.icon-directional, .send-button svg) {
+  transform: scaleX(-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    transition-property: opacity !important;
+  }
+  button:not(:disabled):active {
+    transform: none;
+  }
+  button[aria-busy='true']::after,
+  .shimmer::after {
+    animation: none;
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+  }
+  .shimmer-text {
+    animation: none;
+    background: none;
+    color: var(--muted);
+  }
+}
+
+/* Menus, modals, palette, toasts: spring scale .96→1 with an 8px rise; opacity eases out. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+    }
+  }
+}

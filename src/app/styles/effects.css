@@ -1,0 +1,800 @@
+/* Effects */
+/* Fire sits over panel backgrounds, with readable content and controls above it. */
+.flame-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+.effects-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+/* Content sits above the fire; the terminal deliberately does not, so flames lick over it (the layer ignores the pointer). */
+.conversation > *,
+.composer-area,
+.file-preview > *,
+.left-sidebar > *,
+.right-sidebar > *,
+.preview-header,
+.preview-toolbar,
+.center-tabs,
+.statusbar,
+.actions-view {
+  position: relative;
+  z-index: 5;
+}
+.terminal-region {
+  position: relative;
+  z-index: 3;
+}
+.flame-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  width: 100%;
+  height: 340px;
+  opacity: 0.7;
+  contain: strict;
+  image-rendering: pixelated;
+}
+/* No mix-blend-mode on the fire canvases: blending forces the whole app underneath to be re-composited every frame.
+   The shader outputs premultiplied colour and embers draw additively, so plain alpha looks nearly identical on dark UIs. */
+.ember-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  contain: strict;
+  image-rendering: pixelated;
+}
+
+/* Hot characters: pop in big and white-hot, rattle, then cool to normal text. */
+.hot-word {
+  white-space: inherit;
+}
+.hot-char {
+  display: inline-block;
+  white-space: pre;
+  animation: char-hot 1100ms cubic-bezier(0.15, 0.8, 0.3, 1) both;
+  will-change: transform, filter;
+  transform-origin: 50% 85%;
+}
+/* Slam: drop in huge and blurred from above, squash on impact with a white flash, rattle, then cool from yellow through orange. */
+@keyframes char-hot {
+  0% {
+    transform: translate(var(--x), calc(var(--y) - 22px)) rotate(var(--r)) scale(2.6);
+    filter: blur(3px) brightness(2.4);
+    opacity: 0.2;
+    color: #fff;
+    text-shadow:
+      0 0 10px #fff,
+      0 0 22px #ffd27a,
+      0 0 40px #ff5a1f;
+  }
+  9% {
+    transform: translate(calc(var(--x) * 0.3), 3px) rotate(calc(var(--r) * -0.4)) scale(1.55, 0.6);
+    filter: blur(0) brightness(2.2);
+    opacity: 1;
+    color: #fffbe6;
+    text-shadow:
+      0 0 8px #fff6c8,
+      0 0 20px #ffae42,
+      0 0 36px #ff3d00;
+  }
+  18% {
+    transform: translate(calc(var(--x) * -1), calc(var(--y) * -1.1)) rotate(calc(var(--r) * -1))
+      scale(0.82, 1.5);
+    filter: brightness(1.7);
+    color: #ffe39a;
+  }
+  30% {
+    transform: translate(calc(var(--x) * 0.8), calc(var(--y) * 0.7)) rotate(calc(var(--r) * 0.7))
+      scale(1.3, 0.88);
+    color: #ffc062;
+    text-shadow:
+      0 0 6px #ffae42,
+      0 0 18px #ff5a1f;
+  }
+  44% {
+    transform: translate(calc(var(--x) * -0.5), calc(var(--y) * -0.4)) rotate(calc(var(--r) * -0.4))
+      scale(0.94, 1.14);
+    filter: brightness(1.3);
+    color: #ff9a4a;
+  }
+  60% {
+    transform: translate(calc(var(--x) * 0.25), 0) rotate(calc(var(--r) * 0.15)) scale(1.06, 0.97);
+    color: #ff7a3a;
+    text-shadow: 0 0 8px #ff6a2a88;
+  }
+  78% {
+    transform: translate(calc(var(--x) * -0.08), 0) rotate(0deg) scale(1);
+    filter: none;
+    color: #e8a27a;
+    text-shadow: 0 0 6px #ff6a2a33;
+  }
+  100% {
+    transform: none;
+    filter: none;
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+/* Flame caret: zero width so it never moves text; a flickering blade of fire drawn around that point. */
+.composer-input.mirrored textarea {
+  caret-color: transparent;
+}
+.fire-caret {
+  display: inline-block;
+  position: relative;
+  width: 0;
+  height: 1.25em;
+  vertical-align: -0.22em;
+}
+.fire-caret::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 2.5px;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(to top, #ff3d00, #ff8a1f 45%, #ffe39a 85%, #fff);
+  box-shadow:
+    0 0 6px #ffae42,
+    0 0 14px #ff5a1f,
+    0 0 26px #ff3d0088;
+  animation: caret-flicker 140ms steps(2) infinite alternate;
+}
+.fire-caret::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -8px;
+  width: 8px;
+  height: 12px;
+  border-radius: 50% 50% 35% 35%;
+  background: radial-gradient(ellipse at 50% 70%, #fff6d8, #ffae42 45%, transparent 70%);
+  filter: blur(1px);
+  animation: caret-tip 380ms ease-in-out infinite alternate;
+}
+@keyframes caret-flicker {
+  from {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  to {
+    opacity: 0.82;
+    transform: scaleY(1.06);
+  }
+}
+@keyframes caret-tip {
+  from {
+    transform: translate(-1px, 1px) scale(0.85);
+    opacity: 0.7;
+  }
+  to {
+    transform: translate(1px, -2px) scale(1.15, 1.3);
+    opacity: 1;
+  }
+}
+
+/* Window border: a thin theme-colored gradient line that travels around the window edge. */
+.effects-on::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--flame-angle),
+    var(--accent),
+    var(--flame-tips, var(--accent-hover)),
+    transparent 30%,
+    transparent 50%,
+    var(--flame-body, var(--accent)),
+    var(--accent)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+/* Static on purpose: rotating a masked conic gradient over the full window repainted the entire screen 20×/s. */
+
+/* Edge heat: a glow that climbs the screen as things heat up. */
+.heat-vignette {
+  position: absolute;
+  inset: 0;
+  contain: strict;
+  background:
+    radial-gradient(120% 70% at 50% 110%, #ff4a0a55, transparent 60%),
+    radial-gradient(60% 120% at -10% 100%, #ff3d0033, transparent 55%),
+    radial-gradient(60% 120% at 110% 100%, #ff3d0033, transparent 55%);
+  opacity: calc(var(--heat, 0.3) * 1.2 - 0.2);
+  transition: opacity 0.3s;
+}
+
+/* Stamp: slams onto the screen, shakes, and burns out. */
+.fire-stamp {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  font-family: 'Anton', Impact, 'Arial Narrow Bold', sans-serif;
+  font-size: clamp(64px, 12vw, 160px);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-left: 0.04em;
+  white-space: nowrap;
+  background: linear-gradient(
+    to top,
+    var(--flame-deep, #7a1a00) 0%,
+    var(--flame-body, var(--accent)) 45%,
+    color-mix(in srgb, var(--accent) 85%, var(--flame-body, #ff3d00)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(
+    0 0 16px color-mix(in srgb, var(--flame-body, var(--accent)) 55%, transparent)
+  );
+  will-change: transform, opacity;
+  animation: stamp-slam 1600ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+/* Transform and opacity only: animating filters on text this large re-rasterizes every frame and stutters. */
+@keyframes stamp-slam {
+  0% {
+    transform: translate(-50%, -50%) scale(2.2);
+    opacity: 0;
+  }
+  12% {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 1;
+  }
+  18% {
+    transform: translate(-50%, -50%) scale(1.01);
+  }
+  24% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  75% {
+    transform: translate(-50%, -51%) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -56%) scale(1.06);
+    opacity: 0;
+  }
+}
+
+/* Slash command chips: transparent text with backgrounds, lined up under the real text. */
+.composer-input textarea {
+  position: relative;
+}
+.composer-command-underlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.composer-command-underlay .chip {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--chip-bg);
+  background: var(--chip-bg);
+}
+.composer-command-underlay .known {
+  --chip-bg: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.composer-command-underlay .partial {
+  --chip-bg: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.composer-command-underlay .arg {
+  --chip-bg: color-mix(in srgb, var(--success) 22%, transparent);
+}
+.composer-command-underlay .unknown {
+  --chip-bg: color-mix(in srgb, var(--danger) 22%, transparent);
+  text-decoration: wavy underline var(--danger);
+}
+
+/* Composer: transparent textarea over a mirror that draws the (animated) text. */
+.composer-input {
+  position: relative;
+}
+.composer-input textarea,
+.composer-mirror,
+.composer-command-underlay {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  max-height: 240px;
+  margin: 0;
+  padding: 14px 16px 4px;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  scrollbar-gutter: stable;
+}
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  pointer-events: none;
+}
+.composer-input.mirrored textarea {
+  position: relative;
+  color: transparent;
+  caret-color: var(--flame-tips, #ffb35c);
+  background: transparent;
+}
+.composer-input.mirrored textarea::placeholder {
+  color: var(--faint);
+}
+.composer-input.mirrored textarea::selection {
+  color: transparent;
+  background: #ff8a3a55;
+}
+
+/* Ignited composer: a slowly rotating fire gradient border while you type or the agent works. */
+@property --flame-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.composer.ignited {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--surface-raised), var(--surface-raised)) padding-box,
+    conic-gradient(
+        from var(--flame-angle),
+        var(--flame-body, #ff3d00),
+        var(--flame-tips, #ffae42),
+        var(--flame-body, #ff6a1f),
+        var(--flame-deep, #7a1a00),
+        var(--flame-body, #ff3d00)
+      )
+      border-box;
+  animation: flame-spin 3s linear infinite;
+  box-shadow:
+    0 0 24px #ff5a1f22,
+    0 8px 24px #0000002e;
+}
+@keyframes flame-spin {
+  to {
+    --flame-angle: 360deg;
+  }
+}
+
+/* Wordmark shimmer and a hot send button. */
+.effects-on .brand strong {
+  background: linear-gradient(100deg, var(--text) 30%, #ffd27a 45%, #ff6a1f 52%, var(--text) 66%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  background-position: 40% 0;
+}
+/* Always-visible effects are static: infinite repaint animations ran every frame next to the fire. */
+.effects-on .brand strong .version {
+  -webkit-text-fill-color: var(--faint);
+}
+@keyframes wordmark-burn {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.effects-on .send-button:not(:disabled) {
+  background: linear-gradient(160deg, #ffd27a, #ff7a2a 55%, #e0420f);
+  box-shadow: 0 0 14px #ff6a1f66;
+}
+.effects-on .send-button:not(:disabled):hover {
+  box-shadow:
+    0 0 22px #ff6a1faa,
+    0 0 4px #ffd27a;
+  transform: translateY(-1px);
+}
+/* Extra motion while effects are on: moving accent lines, sweeps and shimmer. */
+@keyframes line-sweep {
+  from {
+    background-position-x: -100%;
+  }
+  to {
+    background-position-x: 200%;
+  }
+}
+@keyframes sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes live-ping {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 60%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+.effects-on .workspace-header,
+.effects-on .center-tabs,
+.effects-on .statusbar {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    var(--flame-tips, var(--accent-hover)),
+    transparent
+  );
+  background-size: 50% 1px;
+  background-position: 50% 100%;
+  background-repeat: no-repeat;
+}
+.effects-on .workspace-header,
+.effects-on .center-tabs {
+  border-bottom-color: var(--border);
+}
+.effects-on .statusbar {
+  background-position-y: 0;
+  animation-direction: reverse;
+}
+.effects-on .chat-row.selected {
+  position: relative;
+  overflow: hidden;
+}
+.effects-on .chat-row.selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 16%, transparent),
+    transparent
+  );
+  animation: sheen 3.5s ease-in-out 1;
+}
+.effects-on .chat-row.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(var(--accent), var(--flame-tips, var(--accent-hover)), var(--accent));
+  background-size: 100% 200%;
+}
+@keyframes flame-pulse {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: 100%;
+  }
+}
+.effects-on .center-tab[aria-pressed='true'],
+.effects-on .file-tab.selected {
+  box-shadow: none;
+  background-image: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--flame-tips, var(--accent-hover)),
+    var(--accent)
+  );
+  background-size: 200% 2px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-color: var(--surface);
+}
+.effects-on .welcome h1,
+.effects-on .actions-view h1 {
+  background: linear-gradient(
+    100deg,
+    var(--text) 35%,
+    var(--accent) 48%,
+    var(--flame-tips, var(--accent-hover)) 52%,
+    var(--text) 65%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  background-position: 40% 0;
+}
+.effects-on .suggestion-grid button {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.15s,
+    border-color 0.15s;
+}
+.effects-on .suggestion-grid button:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-line);
+}
+.effects-on .suggestion-grid button:hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 14%, transparent),
+    transparent
+  );
+  animation: sheen 1.4s ease-in-out infinite;
+}
+.effects-on .tool-card.running {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    conic-gradient(
+        from var(--flame-angle),
+        var(--accent),
+        transparent 40%,
+        var(--flame-tips, var(--accent)) 70%,
+        var(--accent)
+      )
+      border-box;
+  animation: flame-spin 2s linear infinite;
+}
+.effects-on .message,
+.effects-on .tool-wrap,
+.effects-on .tool-group,
+.effects-on .system-message {
+  animation: rise-in 0.35s ease-out both;
+}
+.effects-on .run-stats.live strong {
+  color: var(--accent);
+  animation: breathe 1.2s ease-in-out infinite;
+}
+.effects-on .streaming-label .status-dot.live {
+  animation: live-ping 1.4s ease-out infinite;
+}
+.effects-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+}
+.effects-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.effects-toggle.on {
+  color: var(--accent);
+}
+
+.spin {
+  animation: spin 1.4s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@media (max-width: 1150px) {
+  .composer-hint {
+    display: none;
+  }
+  .permission-status {
+    display: none;
+  }
+}
+
+/* ---- App-wide antics (only while effects are on) ---- */
+
+/* Buttons squish when pressed and pop on hover. */
+.effects-on button:not(:disabled) {
+  transition: transform 120ms cubic-bezier(0.3, 1.8, 0.5, 1);
+}
+.effects-on button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+.effects-on button:not(:disabled):active {
+  transform: scale(0.92);
+}
+
+/* Close buttons spin threateningly. */
+.effects-on .file-tab .icon-button:hover {
+  transform: rotate(90deg) scale(1.15);
+  color: var(--accent);
+}
+
+/* Cards tilt a little on hover. */
+.effects-on :is(.action-card, .tool-card, .suggestion-grid button):hover {
+  transform: rotate(-0.4deg) translateY(-2px);
+  transition: transform 160ms ease;
+}
+
+/* Error badges won't sit still. */
+.effects-on .badge.failed {
+  display: inline-block;
+  animation: antics-jitter 2.4s infinite;
+}
+@keyframes antics-jitter {
+  0%, 90%, 100% { transform: none; }
+  92% { transform: translateX(-2px) rotate(-3deg); }
+  94% { transform: translateX(2px) rotate(3deg); }
+  96% { transform: translateX(-1px) rotate(-2deg); }
+}
+
+/* Tab counters pulse. */
+.effects-on .center-tab .count {
+  display: inline-block;
+  animation: breathe 2s ease-in-out infinite;
+}
+
+/* The line you jumped to burns in. */
+.effects-on .preview-line-highlight {
+  animation: antics-flash 900ms ease-out;
+}
+@keyframes antics-flash {
+  0% { background: color-mix(in srgb, var(--accent) 60%, transparent); }
+  100% { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+}
+
+/* Empty states bob around. */
+.effects-on .empty-card {
+  animation: antics-bob 3s ease-in-out infinite;
+}
+@keyframes antics-bob {
+  50% { transform: translateY(-4px); }
+}
+
+/* Selection and scrollbars catch fire. */
+.effects-on ::selection {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.effects-on ::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--accent), var(--flame-tips, var(--accent-hover)));
+  border-radius: 6px;
+}
+
+/* Rage clicking shakes the app; the Konami code does a barrel roll. */
+:root.antics-shake .effects-on {
+  animation: antics-shake 450ms;
+}
+@keyframes antics-shake {
+  20% { transform: translate(-4px, 2px); }
+  40% { transform: translate(4px, -2px); }
+  60% { transform: translate(-3px, -1px); }
+  80% { transform: translate(3px, 1px); }
+}
+:root.antics-barrel .effects-on {
+  animation: antics-barrel 1s ease-in-out;
+}
+@keyframes antics-barrel {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Even more antics ---- */
+
+/* Focused fields get a spinning fire border. */
+.effects-on :is(input, textarea, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  animation: antics-outline 1.2s linear infinite;
+}
+@keyframes antics-outline {
+  50% { outline-color: var(--flame-tips, var(--accent-hover)); outline-offset: 4px; }
+}
+
+/* Headings and the wordmark do a little wave when hovered. */
+.effects-on :is(h1, h2, h3, .brand strong):hover {
+  animation: antics-wave 600ms ease-in-out;
+}
+@keyframes antics-wave {
+  25% { transform: skewX(-8deg); }
+  50% { transform: skewX(6deg) scale(1.03); }
+  75% { transform: skewX(-3deg); }
+}
+
+/* Icons rock when their button is hovered. */
+.effects-on button:not(:disabled):hover svg {
+  animation: antics-rock 400ms ease-in-out;
+}
+@keyframes antics-rock {
+  33% { transform: rotate(-14deg); }
+  66% { transform: rotate(10deg); }
+}
+
+/* Links and focused rows get a glowing underline sweep. */
+.effects-on a:hover {
+  text-shadow: 0 0 8px var(--accent);
+}
+
+/* Status bar text slowly breathes heat. */
+.effects-on .statusbar {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ---- Final round ---- */
+
+/* Disco mode: the whole app cycles colours (type "disco" or triple-click). */
+:root.antics-disco .effects-on {
+  animation: antics-disco 1.2s linear infinite;
+}
+@keyframes antics-disco {
+  to { filter: hue-rotate(360deg) saturate(1.6); }
+}
+
+/* Switching tabs bounces the new one into place. */
+.effects-on :is(.center-tab[aria-pressed='true'], .file-tab.selected) {
+  animation: antics-boing 380ms cubic-bezier(0.3, 1.8, 0.5, 1);
+}
+@keyframes antics-boing {
+  0% { transform: scaleY(0.8) translateY(3px); }
+  100% { transform: none; }
+}
+
+/* Chat messages and cards pop in instead of just appearing. */
+.effects-on :is(.message, .action-card, .tool-card) {
+  animation: antics-pop 350ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes antics-pop {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); }
+}
+
+/* Checkboxes and toggles boing when flipped. */
+.effects-on input[type='checkbox']:checked {
+  animation: antics-boing 300ms cubic-bezier(0.3, 1.8, 0.5, 1);
+}
+
+/* Badges get a hot glow. */
+.effects-on .badge {
+  box-shadow: 0 0 10px -2px currentColor;
+}
+
+/* Line numbers flicker warm when hovered. */
+.effects-on .line-numbers:hover {
+  color: var(--accent);
+  text-shadow: 0 0 6px var(--accent);
+  transition: color 200ms;
+}
