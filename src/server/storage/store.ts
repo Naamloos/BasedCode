@@ -62,7 +62,7 @@ export function defaultGlobal(): GlobalSettings {
     welcomeDismissed: false,
     providers: defaultProviders(),
     approvalMode: 'always',
-    language: 'based',
+    language: 'en',
     disabledTools: [],
     compaction: { enabled: true, thresholdTokens: 64_000 },
     appearance: { theme: 'based', lightTheme: 'normie', mode: 'dark', flame: 'classic' },

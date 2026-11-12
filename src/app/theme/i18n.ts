@@ -12,9 +12,9 @@ import based from '../locales/based';
 
 const translations: Record<AppLanguage, Dictionary> = { en: {}, nl, based };
 
-export const appLanguage = ref<AppLanguage>('based');
+export const appLanguage = ref<AppLanguage>('en');
 export function setAppLanguage(language: AppLanguage | undefined): void {
-  appLanguage.value = language && language in translations ? language : 'based';
+  appLanguage.value = language && language in translations ? language : 'en';
 }
 
 /** Translates English UI text into the current language and fills `{name}` placeholders from `params`. */

@@ -75,7 +75,7 @@ export const globalSchema = z.object({
   welcomeDismissed: z.boolean().default(false),
   providers: z.array(providerSchema).max(30),
   approvalMode,
-  language: z.enum(['en', 'nl', 'based']).default('based'),
+  language: z.enum(['en', 'nl', 'based']).default('en'),
   disabledTools: z.array(z.string().min(1).max(100)).default([]),
   mcpServers: z.array(serverConfig).max(100),
   mcpRegistries: z.array(mcpRegistry).max(20).optional(),

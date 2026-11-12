@@ -185,7 +185,7 @@ const state = ref<AppState & { recoveryRequired?: boolean }>({
   sandbox: { available: false, detail: 'Connecting…' },
   global: {
     welcomeDismissed: false,
-    language: 'based',
+    language: 'en',
     disabledTools: [],
     mcpServers: [],
     languageServers: [],
