@@ -4,19 +4,11 @@
 
 # BasedCode
 
-BasedCode is a desktop app for working on real codebases with an AI agent. You open a project folder, pick a model, and give the agent a task. The agent reads, edits, runs commands and checks its work through BasedCode's own tools. You approve what it does and can review or revert every change.
+BasedCode is a desktop app for working on real codebases with an AI agent. You open a project folder, pick a model and give the agent a task. The agent reads, edits, runs commands and checks its work through BasedCode's own tools. You approve what it does and can review or revert every change.
 
-It works with Claude Code, Codex and Antigravity (using your existing CLI login) and with local models through Ollama or LM Studio. Every provider gets the same tools, permissions and history.
+It works with Claude Code, Codex and Antigravity (through your existing CLI login) and with local models through Ollama or LM Studio. Every provider gets the same tools, permissions and history, so you can switch models in the middle of a chat.
 
-The jokes, fire effects and "Based" wording are part of the theme. You can switch to plain English or Dutch and turn the effects off in settings.
-
-## What you can do with it
-
-- **Chat with an agent about your code.** It explores, explains, plans and changes code in the folder you opened.
-- **Use guided modes** such as rubber duck debugging, pair programming, code review, archaeology (why is the code like this?), testing and migrations. Type `/` in the message box to see them all.
-- **Stay in control.** Terminal commands and Git changes need your approval. You can set allow/deny rules and per-run budgets.
-- **Review and undo.** See diffs per prompt, and revert the workspace to any earlier prompt.
-- **Extend it** with MCP servers, workspace skills (`.basedcode/skills/<name>/SKILL.md`) and `AGENTS.md`/`CLAUDE.md` project instructions, which load automatically.
+BasedCode has a sense of humor. You can switch on fire effects and the "Based" slang language in settings. Out of the box it starts in plain English with effects off.
 
 ## Screenshots
 
@@ -31,17 +23,54 @@ The jokes, fire effects and "Based" wording are part of the theme. You can switc
   </tr>
 </table>
 
-Screenshots are taken with effects off and the language set to English.
+## Features
 
-## Set it up
+- **Agent chats in your project.** The agent explores, explains, plans and changes code in the folder you opened. Plain chats without a project run in a scratch folder of their own.
+- **Approvals you control.** Terminal commands and Git changes need your approval. Set allow and deny rules for commands, and per-run budgets for tool calls, tokens and cost. A secret guard asks before a likely secret leaves your machine.
+- **Review and undo.** See the diff of every prompt, and revert the workspace to any earlier prompt. Fork a chat from any message, re-run a prompt, or ask a second model for a second opinion and compare the results.
+- **Provider fallback.** Put providers in order per workspace. When one runs out of quota, the next one continues the same chat.
+- **Built-in workspace tools.** A file tree, a terminal, a Git panel that stages, commits and pushes with a written message, and diagnostics from language servers (TypeScript, Vue, Python, C# and more).
+- **Extensible.** Add MCP servers (including from a built-in marketplace) and skills. Skills load from `.basedcode/skills/<name>/SKILL.md` in a workspace, or globally from `~/.basedcode/skills`, `~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills`. `AGENTS.md` and `CLAUDE.md` project instructions load automatically.
+- **Usage tracking.** See tokens, cost and provider limits per chat, per model and over time.
+- **Remote access.** Open BasedCode from your phone through a Cloudflare tunnel (needs `cloudflared`), and get push notifications for approvals and finished prompts.
+- **Themes and languages.** Dark and light themes, a theme editor, and the UI in English, Dutch or Based.
 
-You need:
+## Guided modes
 
-- **Node.js 24 or newer**. BasedCode refuses to start on older versions.
-- **Windows or Linux.** macOS is not supported yet.
-- At least one model provider (see below).
+A guided mode gives the agent a role for the whole chat. Type the command in the message box, or pick the mode from the new-chat menu. Each mode has a **Wrap up** button that ends the session with a report, such as a debugging report, a test coverage summary or a postmortem.
 
-Install and start it from source:
+| Command | Mode | What it does |
+| --- | --- | --- |
+| `/duck` | Rubber duck | Explain your bug; the agent asks questions, reproduces it and tests ideas with you. It doesn't change code unless you ask. |
+| `/pair` | Pair programming | Plan a change together, then you write it while the agent guides, reviews and explains. |
+| `/plan` | Planner | Turns an idea into a written implementation plan with scope, design, ordered tasks and risks. It doesn't write the code. |
+| `/dig` | Archaeology | Traces code paths, dependencies and Git history to explain why code is the way it is and what a change would break. Read-only. |
+| `/devil` | Devil's advocate | Argues against your design, questions assumptions, hunts edge cases and pitches alternatives. |
+| `/grill` | Grill | Interrogates you about your design, one hard question at a time, until every gap is answered. |
+| `/refactor` | Refactor | Restructures code in small steps that keep behavior identical, with tests proving it after each step. |
+| `/tests` | Test architect | Designs a test plan for a feature, then writes and runs the tests. |
+| `/teach` | Teacher | Teaches you a skill or a codebase with lessons and exercises at your level. |
+| `/perf` | Performance detective | Measures first, finds the real bottleneck, fixes it and proves the improvement with numbers. |
+| `/migrate` | Migration planner | Plans and carries out a package or framework upgrade in small, checked steps. |
+| `/reviewer` | Reviewer | Reviews someone else's pull request: explains the change, finds problems and drafts comments. It doesn't post anything. |
+| `/incident` | Incident | For production problems: stabilize first, find the cause from logs and recent changes, end with a postmortem. |
+| `/hackerman` | Hackerman | Hunts for security holes in your own code like an attacker would, proves them safely and helps fix them. |
+| `/docs` | Docs writer | Writes or fixes documentation, checking every command and example against the code. |
+| `/design` | Designer | Interviews you about a new site or app with color, font and rounding pickers, and writes a design specification. |
+
+Other commands include `/new`, `/plain`, `/compact`, `/export`, `/model`, `/skill`, `/create-skill` and `/install-mcp`. Type `/help` for the full list.
+
+## Install
+
+### Windows installer
+
+Download `BasedCode-Setup-<version>.exe` from the [latest release](https://github.com/Naamloos/BasedCode/releases/latest) and run it. The installer includes its own Node.js and NW.js runtime, so you don't need anything else installed apart from a model provider. It installs to `Program Files` and needs administrator rights.
+
+The installed app checks GitHub for new releases (source checkouts don't). When one is available, **Settings → Info → Check for updates** downloads and runs the new installer.
+
+### From source (Windows and Linux)
+
+You need **Node.js 24 or newer**. macOS is not supported yet.
 
 ```bash
 git clone https://github.com/Naamloos/BasedCode.git
@@ -54,31 +83,29 @@ npm start
 
 The first start downloads the NW.js runtime, then the BasedCode window opens.
 
-> **npm 11 and install scripts:** recent npm versions may skip package install scripts and print `npm warn install-scripts`. BasedCode needs native modules (`node-pty`, `better-sqlite3`) and `nw`. If the app fails to start after a fresh install, run `npm install-scripts ls`, approve the listed packages with `npm install-scripts approve <pkg>`, and run `npm install` again.
+> **npm 11 and install scripts:** recent npm versions may skip install scripts and print `npm warn install-scripts`. BasedCode needs them for `node-pty` and `nw`. If the app fails to start after a fresh install, run `npm install-scripts ls`, approve the listed packages with `npm install-scripts approve <pkg>`, and run `npm install` again.
 
-User data (chats, settings) is stored in `%LOCALAPPDATA%\BasedCode` on Windows and `~/.local/share/basedcode` on Linux. Set `BASEDCODE_DATA_DIR` to use another folder.
+Chats and settings are stored in `%LOCALAPPDATA%\BasedCode` on Windows and `~/.local/share/basedcode` on Linux. Set `BASEDCODE_DATA_DIR` to use another folder.
 
 ### Connect a provider
 
-Log in once on the command line; BasedCode reuses that login.
+Log in once on the command line; BasedCode reuses that login and stores no credentials of its own for CLI providers.
 
 | Provider | What to do |
 | --- | --- |
 | Claude Code | `claude login` |
 | Codex | `codex login` |
-| Antigravity | Install `agy` and sign in (`agy`, or use the sign-in button in BasedCode settings) |
+| Antigravity | Install `agy` and sign in (run `agy`, or use the sign-in button in BasedCode settings) |
 | Ollama | `ollama serve`, then set the endpoint in BasedCode settings |
 | LM Studio | Start the local server, then set the endpoint in BasedCode settings |
 
-You can set an ordered fallback per workspace: when one provider runs out of quota, the next one continues.
-
-## The first thing to try
+## First steps
 
 Ask BasedCode to explain a project you know, so you can judge the answer.
 
-1. Click to open a folder and choose one of your own projects.
+1. Open a folder with one of your own projects.
 2. Choose a provider and model.
-3. Type `/dig` and press Enter. This starts a chat in archaeology mode, which only reads code and never changes it.
+3. Type `/dig` and press Enter. This starts a chat in archaeology mode, which only reads code.
 4. Ask something like:
 
    ```
@@ -89,25 +116,31 @@ Watch the tool cards as the agent searches files and reads the history. Then try
 
 ## Limitations
 
-BasedCode is still in development.
+BasedCode is still young.
 
 - **No sandbox yet.** Commands run with your own user permissions. That is why every terminal command needs approval.
 - MCP and language servers run as normal child processes.
 - Reverting a prompt restores files only. It does not undo Git commits, branches, stashes or the index. Checkpoints skip dependency folders, links and very large files.
 - Commits made by the app do not run Git hooks.
-- Not supported yet: macOS, editing code in the built-in file viewer, subagents.
+- Not supported yet: macOS, a Linux installer, editing code in the built-in file viewer, and subagents.
 
-## For contributors
+## Releases
+
+Releases are published on [GitHub Releases](https://github.com/Naamloos/BasedCode/releases) with a Windows installer attached.
+
+A release is made by bumping `version` in `package.json` on `master`. The [release workflow](.github/workflows/release.yml) then tags `v<version>`, builds the installer on a Windows runner and publishes the release. It can also be started by pushing a `v*` tag or running the workflow by hand.
+
+## Contributing
 
 ```bash
-npm run dev          # Dev mode with hot reload (uses port 5317)
+npm run dev          # dev mode with hot reload (Vite on port 5317)
 npm run typecheck
 npm run lint
 npm test
 npm run package:win  # Windows installer, after npm run build
 ```
 
-See [AGENTS.md](AGENTS.md) for how the code is organized and the conventions to follow.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:` and so on) and are checked by commitlint on every commit. See [AGENTS.md](AGENTS.md) for the project layout and conventions.
 
 ## License
 
