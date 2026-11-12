@@ -2,12 +2,14 @@
 // runtimes and the BasedCode.exe launcher in release/stage, then compiles release/BasedCode-Setup-<version>.exe
 // with Inno Setup. Run `npm ci && npm run build` first. Requires Inno Setup 6 (preinstalled on GitHub runners).
 import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureRuntime } from './runtime.mjs';
+import { widgetLibraries } from '../src/server/tools/widgetLibraries.ts';
 
 if (process.platform !== 'win32') throw new Error('The Windows installer can only be built on Windows.');
 const require = createRequire(import.meta.url);
@@ -47,22 +49,62 @@ const npmCli = process.env.npm_execpath;
 if (npmCli) run(process.execPath, [npmCli, 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: app });
 else run('npm.cmd', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: app, shell: true });
 
+// Widgets use browser assets, not these packages' Node entry points or dependency trees.
+const legal = /^(licen[cs]e|notice|copying)/i;
+for (const library of Object.values(widgetLibraries)) {
+  const source = join(root, 'node_modules', library.package);
+  const target = join(app, 'node_modules', library.package);
+  const files = new Set([
+    'package.json',
+    ...('script' in library ? [library.script] : []),
+    ...('serve' in library ? library.serve : []),
+    ...(await readdir(source)).filter((name) => legal.test(name)),
+  ]);
+  for (const file of files) {
+    await mkdir(dirname(join(target, file)), { recursive: true });
+    await cp(join(source, file), join(target, file), { recursive: true });
+  }
+}
+
 // Drop files nothing loads at runtime (source maps, type declarations, docs). They are over a third of the
 // files in node_modules and include its longest paths, which is what breaks installs near the 260-character limit.
-const junk = /\.(map|md|markdown|d\.ts|d\.mts|d\.cts|tsbuildinfo)$/i;
+const junk = /\.(map|md|markdown|d\.ts|d\.mts|d\.cts|tsbuildinfo|pdb)$/i;
 let pruned = 0;
-async function prune(directory) {
+let removedBytes = 0;
+const ptyPrebuilds = join(app, 'node_modules/node-pty/prebuilds');
+async function prune(directory, discard = false) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) await prune(path);
-    else if (junk.test(entry.name)) {
+    if (entry.isDirectory()) {
+      // Every Claude call supplies the user's CLI path; neither SDK's bundled CLI is used.
+      const remove =
+        discard ||
+        (basename(directory) === '@anthropic-ai' && entry.name.startsWith('claude-agent-sdk-')) ||
+        (directory === ptyPrebuilds && entry.name !== `${process.platform}-${process.arch}`);
+      await prune(path, remove);
+      if (remove) await rm(path, { recursive: true });
+    } else if (discard || (junk.test(entry.name) && !legal.test(entry.name))) {
+      removedBytes += (await stat(path)).size;
       await rm(path, { force: true });
       pruned++;
     }
   }
 }
 await prune(join(app, 'node_modules'));
-console.info(`Pruned ${pruned} unused files from node_modules.`);
+console.info(
+  `Pruned ${pruned} unused files (${(removedBytes / 1024 ** 2).toFixed(1)} MiB) from node_modules.`,
+);
+
+// Fail packaging if trimming loses a widget entry point or the bundled Codex launcher.
+for (const library of Object.values(widgetLibraries)) {
+  const files = 'script' in library ? [library.script] : Object.values(library.imports);
+  for (const file of files)
+    assert(
+      existsSync(join(app, 'node_modules', library.package, file)),
+      `Missing widget asset: ${library.package}/${file}`,
+    );
+}
+createRequire(join(app, 'package.json')).resolve('@openai/codex/bin/codex.js');
 
 // Runtimes: this Node.js binary, and the regular (non-SDK) NW.js build the dev tooling pins.
 await cp(process.execPath, join(stage, 'node.exe'));
