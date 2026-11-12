@@ -531,3 +531,78 @@
     padding: 0;
   }
 }
+
+/* Form dialogs opened from settings (provider, skill editors): above settings, below confirmations. */
+.modal-backdrop.form-dialog-backdrop {
+  z-index: 1000;
+}
+.small-modal.form-dialog {
+  display: flex;
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  overflow: hidden;
+  outline: none;
+}
+.small-modal.form-dialog.wide {
+  width: min(760px, calc(100vw - 32px));
+}
+/* Header and footer stay put; only the fields scroll. */
+.form-dialog > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.small-modal.form-dialog .modal-header {
+  padding: 18px 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.form-dialog .modal-header h2 {
+  font-size: var(--fs-lg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.form-dialog-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 22px;
+}
+.form-dialog-body > label,
+.form-dialog-body .form-grid > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.form-dialog-body .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 600px) {
+  .form-dialog-body .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.form-dialog-body .setting-group,
+.form-dialog-body .inline-warning {
+  margin: 0;
+}
+/* `.small-modal label input` would otherwise stretch the switches to full width. */
+.small-modal .setting-row input.switch {
+  width: 36px;
+}
+.form-dialog-body textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.small-modal.form-dialog .modal-footer {
+  padding: 12px 22px 16px;
+  border-top: 1px solid var(--border);
+}
+.form-dialog .modal-footer .danger-action {
+  margin-inline-end: auto;
+  color: var(--danger);
+}

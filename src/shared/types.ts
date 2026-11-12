@@ -270,6 +270,10 @@ export type LanguageOperation = (typeof languageOperations)[number];
 export interface LanguageServerStatus extends LanguageConfig {
   available: boolean;
   canInstall: boolean;
+  /** The command line BasedCode would start, once found. */
+  resolved?: string;
+  /** Started for this workspace in this session. */
+  running?: boolean;
 }
 
 export interface CommandRules {

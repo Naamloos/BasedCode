@@ -292,6 +292,19 @@ function effortLabel(effort: string): string {
   if (effort === reasoningOff) return t('off');
   return effort || t('default');
 }
+// The chip shows the model's default effort, so read the cached catalog once without waiting for the menu.
+watch(
+  () => !picking.value && current.value?.id,
+  (id) => {
+    if (id && !catalog.value.length)
+      void rpc<ProviderCatalog[]>('provider.catalog', {})
+        .then((entries) => { if (!catalog.value.length) catalog.value = entries; })
+        .catch(() => undefined);
+  },
+  { immediate: true },
+);
+/** Shown on the composer chip: the chosen effort, else the model's own default once the catalog is known. */
+const selectorEffort = computed(() => current.value?.effort || currentInfo.value?.defaultEffort || '');
 function confirmPick() {
   if (!picked.value) return;
   emit('pick', {
@@ -393,7 +406,12 @@ async function chooseEffort(effort: string) {
         :class="current?.kind"
       /><span class="model-selector-label">{{
         label
-      }}</span><TriangleAlert
+      }}</span><span
+        v-if="selectorEffort"
+        class="model-selector-effort"
+        :class="{ implicit: !current?.effort }"
+        :title="t('Reasoning effort')"
+      ><Brain :size="11" />{{ effortLabel(selectorEffort) }}</span><TriangleAlert
         v-if="currentInfo && currentInfo.tools === false"
         :size="12"
         class="warning-text"

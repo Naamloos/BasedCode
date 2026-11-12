@@ -8,6 +8,7 @@ import {
   readdir,
   realpath,
   rm,
+  rmdir,
   stat,
   unlink,
   writeFile,
@@ -42,6 +43,15 @@ import {
 } from "../shared/types.js";
 import { Agent, isTextAttachment } from "./agent/agent.js";
 import { expandSlashCommand, skillCommands } from "./agent/commands.js";
+import {
+  changeGlobalSkill,
+  listAllSkills,
+  maxSkillLength,
+  skillDescription,
+  skillNamePattern,
+  skillSources,
+  workspaceSkillPath,
+} from "./agent/skills.js";
 import { guidedMode, guidedModeIds } from "../shared/chatModes.js";
 import { handOffPrompt } from "./agent/prompts.js";
 import { googleFontsCsp } from "./tools/designPickers.js";
@@ -1123,53 +1133,40 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       return null;
     }
     case "skills.list": {
-      const { workspaceId } = workspaceInput.parse(params);
-      const workspace = store.get("workspace", workspaceId);
-      const directory = await safePath(workspace, ".basedcode/skills");
-      let entries;
-      try {
-        entries = await readdir(directory, { withFileTypes: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-        throw error;
-      }
-      const skills = [];
-      for (const entry of entries) {
-        if (
-          !entry.isDirectory() ||
-          !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.name) ||
-          entry.name.length > 64
-        )
-          continue;
-        try {
-          const { content, binary } = await readText(
-            workspace,
-            `.basedcode/skills/${entry.name}/SKILL.md`,
-          );
-          if (!binary && content.length <= 50_000)
-            skills.push({ name: entry.name, content });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-      }
-      return skills.sort((a, b) => a.name.localeCompare(b.name));
+      // Every skill in every folder, shadowed ones included, so settings can show where each one lives.
+      const { workspaceId } = z.object({ workspaceId: id.optional() }).parse(params);
+      const workspace = workspaceId ? store.get("workspace", workspaceId) : undefined;
+      const winners = new Set<string>();
+      return (await listAllSkills(workspace)).map((skill) => {
+        const active = !winners.has(skill.name);
+        winners.add(skill.name);
+        return { ...skill, description: skillDescription(skill.content), active };
+      });
     }
     case "skills.save":
     case "skills.delete": {
-      const { workspaceId, name, content, expectedContent } = z
+      const { workspaceId, scope, source, name, content, expectedContent } = z
         .object({
-          workspaceId: id,
-          name: z
-            .string()
-            .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-            .max(64),
-          content: z.string().min(1).max(50_000).optional(),
+          workspaceId: id.optional(),
+          scope: z.enum(["workspace", "global"]).default("workspace"),
+          source: z.enum(skillSources).default("basedcode"),
+          name: z.string().regex(skillNamePattern).max(64),
+          content: z.string().min(1).max(maxSkillLength).optional(),
           expectedContent: z.string().optional(),
         })
         .parse(params);
+      if (method === "skills.save" && content === undefined)
+        throw new Error("Skill instructions are required.");
+      const change = method === "skills.delete" ? undefined : content;
+      if (scope === "global") {
+        await changeGlobalSkill(source, name, change, expectedContent);
+        events.publish("state");
+        return null;
+      }
+      if (!workspaceId) throw new Error("Open a workspace to change its skills.");
       assertIdle(workspaceId);
       const workspace = store.get("workspace", workspaceId);
-      const path = `.basedcode/skills/${name}/SKILL.md`;
+      const path = workspaceSkillPath(source, name);
       const file = await safePath(workspace, path, true);
       let previous: string | undefined;
       try {
@@ -1179,16 +1176,16 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       }
       if (previous !== expectedContent)
         throw new Error("Skill changed. Refresh the list before saving.");
-      if (method === "skills.delete") {
+      if (change === undefined) {
         if (previous === undefined) throw new Error("Skill no longer exists.");
         await unlink(file);
+        // Only an emptied folder goes; scripts or references next to SKILL.md stay.
+        await rmdir(dirname(file)).catch(() => undefined);
       } else {
-        if (content === undefined)
-          throw new Error("Skill instructions are required.");
         await mkdir(dirname(file), { recursive: true });
         if (previous === undefined)
-          await writeFile(file, content, { flag: "wx" });
-        else await replaceFile(file, content);
+          await writeFile(file, change, { flag: "wx" });
+        else await replaceFile(file, change);
       }
       events.publish("files-changed", { path }, workspaceId);
       return null;

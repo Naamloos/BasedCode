@@ -37,8 +37,6 @@ import {
   type AppLanguage,
   type ApprovalMode,
   type GlobalSettings,
-  type LanguageConfig,
-  type LanguageServerStatus,
   type ProviderLimits,
   type Workspace,
 } from '../../../shared/types';
@@ -63,6 +61,7 @@ import RunPolicyFields from './RunPolicyFields.vue';
 import UsageDashboard from '../usage/UsageDashboard.vue';
 import RemoteAccessPanel from './RemoteAccessPanel.vue';
 import SkillManager from './SkillManager.vue';
+import LanguageServerPanel from './LanguageServerPanel.vue';
 import McpMarketplace from './McpMarketplace.vue';
 import AvatarCropper from './AvatarCropper.vue';
 import packageJson from '../../../../package.json';
@@ -125,14 +124,14 @@ const tab = ref(props.initialTab ?? 'about');
 // Section nav. Each section lists the words its settings use, so search can find a setting in any section.
 const sections: SettingsSection[] = [
   { id: 'about', label: 'About you', icon: User, words: 'about user name occupation job experience voice tone personalization avatar picture photo profile' },
-  { id: 'models', label: 'Models', icon: SlidersHorizontal, words: 'model lineup provider fallback order codex claude antigravity ollama lm studio openai endpoint api key credentials' },
+  { id: 'models', label: 'Providers', icon: SlidersHorizontal, words: 'model lineup provider fallback order codex claude antigravity ollama lm studio openai endpoint api key credentials' },
   { id: 'agent', label: 'Approvals & context', icon: ShieldCheck, words: 'approval permissions require approval workspace-external commands sandbox compaction context tokens budget notifications phone ntfy' },
   { id: 'appearance', label: 'Appearance', icon: Palette, words: 'theme mode light dark system language flames effects reduced motion palette colors' },
   { id: 'keybindings', label: 'Keybindings', icon: Keyboard, words: 'keyboard shortcuts keys bindings command palette ctrl' },
   { id: 'usage', label: 'Usage', icon: BarChart3, words: 'usage cost tokens limits spend dashboard' },
   { id: 'mcp', label: 'MCP servers', icon: Plug, words: 'mcp servers marketplace registry install' },
   { id: 'servers', label: 'Language servers', icon: Server, words: 'language servers lsp typescript vue python json c# roslyn' },
-  { id: 'skills', label: 'Skills', icon: Sparkles, words: 'skills instructions' },
+  { id: 'skills', label: 'Skills', icon: Sparkles, words: 'skills instructions slash commands claude codex agents skill.md' },
   { id: 'tools', label: 'Tools', icon: Wrench, words: 'tools enable disable files git browser terminal' },
   { id: 'system', label: 'CLIs & workspaces', icon: TerminalSquare, words: 'cli path executable codex claude cloudflared new workspace defaults' },
   { id: 'remote', label: 'Remote access', icon: Globe, words: 'remote access tunnel phone qr cloudflared' },
@@ -204,8 +203,6 @@ const {
 
 const error = ref('');
 const notice = ref('');
-const languageJson = ref(JSON.stringify(settings.value.languageServers, null, 2));
-const languageServers = ref<LanguageServerStatus[]>([]);
 const toolCatalog = ref<{ name: string; description: string }[]>([]);
 const toolFilter = ref('');
 /** Display groups for the tools tab, matched by name; anything unmatched lands in "Other". */
@@ -267,112 +264,9 @@ function setTools(names: string[], enabled: boolean) {
   const others = (settings.value.disabledTools ?? []).filter((name) => !names.includes(name));
   settings.value.disabledTools = enabled ? others : [...others, ...names];
 }
-const languageBusy = ref(false);
-const settingUpLanguage = ref('');
-const languageProgress = ref('');
-const languageSetup = [
-  {
-    name: 'C# / Roslyn',
-    languages: 'csharp',
-    install: 'dotnet tool install --global roslyn-language-server --prerelease',
-    command: 'roslyn-language-server',
-    args: ['--stdio', '--autoLoadProjects'],
-    detail:
-      'Requires the .NET 10 runtime or later and the SDK needed by your project. Automatic project loading opens your solution or discovers .csproj files. Global .NET tools are also detected outside PATH.',
-    docs: 'https://github.com/dotnet/roslyn/blob/main/src/LanguageServer/roslyn-language-server/README.md',
-  },
-  {
-    name: 'TypeScript / JavaScript',
-    languages: 'typescript, javascript, typescriptreact, javascriptreact',
-    install: 'npm install -g typescript-language-server typescript',
-    command: 'typescript-language-server',
-    args: ['--stdio'],
-    detail:
-      'Requires Node.js and npm. Both the server and TypeScript must be installed. Workspace packages are discovered automatically; keep tsconfig.json or jsconfig.json in your project.',
-    docs: 'https://github.com/typescript-language-server/typescript-language-server',
-  },
-  {
-    name: 'Python',
-    languages: 'python',
-    install: 'npm install -g pyright',
-    command: 'pyright-langserver',
-    args: ['--stdio'],
-    detail:
-      'Requires Node.js and npm for this server. Configure your Python environment in pyrightconfig.json or pyproject.toml when automatic environment detection is insufficient.',
-    docs: 'https://github.com/microsoft/pyright',
-  },
-  {
-    name: 'Vue',
-    languages: 'vue',
-    install: 'Use the Set up button to install the standalone-compatible server and TypeScript.',
-    command: 'vue-language-server',
-    args: ['--stdio'],
-    detail:
-      'BasedCode setup installs @vue/language-server 2.2.12 with TypeScript 5 and supplies the TypeScript SDK path. Vue server 3.x needs a separate TypeScript plugin bridge and is not supported by this standalone client.',
-    docs: 'https://github.com/vuejs/language-tools',
-  },
-  {
-    name: 'JSON / JSONC',
-    languages: 'json, jsonc',
-    install: 'npm install -g vscode-langservers-extracted',
-    command: 'vscode-json-language-server',
-    args: ['--stdio'],
-    detail:
-      'Requires Node.js and npm. The package provides several servers; use the JSON executable shown here.',
-    docs: 'https://github.com/hrsh7th/vscode-langservers-extracted',
-  },
-];
-async function discoverLanguages(persist = true) {
-  if (!props.workspace || languageBusy.value) return;
-  languageBusy.value = true;
-  languageProgress.value = t('Discovering language servers…');
-  try {
-    if (persist && !(await save(false))) return;
-    languageServers.value = await rpc('language.discover', { workspaceId: props.workspace.id });
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure);
-  } finally {
-    languageBusy.value = false;
-  }
-}
-async function setupLanguage(serverId: string) {
-  if (!props.workspace || languageBusy.value) return;
-  languageBusy.value = true;
-  settingUpLanguage.value = serverId;
-  languageProgress.value = t('Saving language-server settings…');
-  try {
-    if (!(await save(false))) return;
-    const name =
-      languageServers.value.find((server) => server.id === serverId)?.name ?? t('language server');
-    languageProgress.value = t(
-      'Setting up {name}… Approve the installation if prompted, then wait for it to finish.',
-      { name },
-    );
-    const config = await rpc<LanguageConfig>('language.setup', {
-      workspaceId: props.workspace.id,
-      serverId,
-    });
-    settings.value.languageServers = settings.value.languageServers.map((server) =>
-      server.id === config.id ? config : server,
-    );
-    languageJson.value = JSON.stringify(settings.value.languageServers, null, 2);
-    languageProgress.value = t('Refreshing discovered servers…');
-    languageServers.value = await rpc('language.discover', { workspaceId: props.workspace.id });
-    notice.value = t('{name} is ready. The model can start it with language_query.', {
-      name: config.name,
-    });
-    emit('saved');
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure);
-  } finally {
-    languageBusy.value = false;
-    settingUpLanguage.value = '';
-  }
-}
 watch(
-  [tab, () => props.workspace?.id],
-  ([currentTab]) => {
-    if (currentTab === 'servers') void discoverLanguages(false);
+  tab,
+  (currentTab) => {
     if (currentTab === 'tools')
       void rpc<{ name: string; description: string }[]>('tools.catalog')
         .then((items) => (toolCatalog.value = items))
@@ -528,7 +422,6 @@ async function save(closeAfter = true) {
       ))
     )
       return false;
-    settings.value.languageServers = JSON.parse(languageJson.value);
     await rpc('global.settings', { settings: settings.value });
     emit('saved');
     if (closeAfter) emit('close');
@@ -537,6 +430,10 @@ async function save(closeAfter = true) {
     error.value = failure instanceof Error ? failure.message : String(failure);
     return false;
   }
+}
+/** Provider and language-server lists save as you edit them; the panel's own error line shows what went wrong. */
+async function persistSettings() {
+  return (await save(false)) ? '' : error.value || t('Settings could not be saved.');
 }
 async function useCurrentWorkspace() {
   if (!props.workspace) return;
@@ -723,7 +620,7 @@ async function resetTemplate() {
           </template>
 
           <template v-else-if="tab === 'models'">
-            <h3>{{ t('Your model lineup') }}</h3>
+            <h3>{{ t('Your providers') }}</h3>
             <p class="muted">
               {{
                 t(
@@ -737,6 +634,7 @@ async function resetTemplate() {
               :credential-ids="credentials.saved"
               :storage="credentials.storage"
               :workspace-id="workspace?.id"
+              :persist="persistSettings"
               @error="(message) => (error = message)"
               @changed="emit('saved')"
             />
@@ -965,118 +863,13 @@ async function resetTemplate() {
             </p>
           </template>
 
-          <template v-else-if="tab === 'servers'">
-            <h3>{{ t('Language intelligence') }}</h3>
-            <p class="muted">
-              {{
-                t(
-                  'Servers are discovered in workspace packages, PATH, and .NET tools. Missing default servers can be installed into BasedCode storage with approval. Starting a server also asks for approval.',
-                )
-              }}
-            </p>
-            <button
-              type="button"
-              class="secondary-button"
-              :disabled="!workspace || languageBusy"
-              @click="discoverLanguages()"
-            >
-              {{ t(languageBusy ? 'Working…' : 'Refresh discovered servers') }}
-            </button>
-            <p
-              v-if="languageBusy"
-              class="muted"
-              role="status"
-            >
-              {{ languageProgress }}
-            </p>
-            <div
-              v-for="server in languageServers"
-              :key="server.id"
-              class="provider-card"
-            >
-              <header>
-                <span>{{ server.name }} · {{ t(server.available ? 'Found' : 'Not installed') }}</span><span class="spacer" />
-                <button
-                  v-if="!server.available && server.canInstall"
-                  type="button"
-                  class="secondary-button"
-                  :disabled="languageBusy"
-                  :aria-busy="settingUpLanguage === server.id"
-                  @click="setupLanguage(server.id)"
-                >
-                  <LoaderCircle
-                    v-if="settingUpLanguage === server.id"
-                    :size="14"
-                    class="spin"
-                  />{{
-                    t(settingUpLanguage === server.id ? 'Setting up…' : 'Set up')
-                  }}
-                </button>
-              </header>
-            </div>
-            <details class="provider-card">
-              <summary>{{ t('Setup guide for common languages') }}</summary>
-              <p class="muted">
-                {{
-                  t(
-                    'Discover servers first, then use Set up for missing defaults or install manually with the commands below. Restart BasedCode after changing PATH. For a custom installation, set command to the full executable path and keep each argument as a separate JSON array entry. Setup downloads executable server code into app storage; it does not add project dependencies.',
-                  )
-                }}
-              </p>
-              <article
-                v-for="guide in languageSetup"
-                :key="guide.command"
-                class="provider-card"
-              >
-                <header>
-                  <strong>{{ guide.name }}</strong><span class="spacer" /><button
-                    type="button"
-                    class="text-button"
-                    @click="
-                      rpc('external.open', { url: guide.docs }).catch(
-                        (failure) => (error = String(failure)),
-                      )
-                    "
-                  >
-                    {{ t('Documentation') }}
-                  </button>
-                </header>
-                <p class="muted">
-                  {{ t(guide.detail) }}
-                </p>
-                <pre class="catalog-output">{{ t(guide.install) }}</pre>
-                <p>
-                  <strong>{{ t('Language IDs:') }}</strong> <code>{{ guide.languages }}</code>
-                </p>
-                <p>
-                  <strong>{{ t('Command:') }}</strong> <code>{{ guide.command }}</code>
-                </p>
-                <p>
-                  <strong>{{ t('Arguments:') }}</strong> <code>{{ JSON.stringify(guide.args) }}</code>
-                </p>
-              </article>
-              <p class="muted">
-                {{
-                  t(
-                    'Roslyn loads project files that may execute MSBuild logic. Open only trusted projects. If a server is found but fails to start, check its required runtime and the error in chat.',
-                  )
-                }}
-              </p>
-            </details>
-            <details class="provider-card">
-              <summary>{{ t('Advanced: JSON config') }}</summary>
-              <label>{{ t('Language servers · JSON')
-              }}<textarea
-                v-model="languageJson"
-                autocomplete="off"
-                class="code-input"
-                :disabled="languageBusy"
-                rows="16"
-                spellcheck="false"
-              />
-              </label>
-            </details>
-          </template>
+          <LanguageServerPanel
+            v-else-if="tab === 'servers'"
+            v-model="settings.languageServers"
+            :workspace="workspace"
+            :persist="persistSettings"
+            @saved="emit('saved')"
+          />
           <template v-else-if="tab === 'appearance'">
             <h3>{{ t('Language') }}</h3>
             <AppSelect

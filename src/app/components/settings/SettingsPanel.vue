@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   ScrollText,
+  Sparkles,
 } from '../../icons';
 import { useSettingsSearch, type SettingsSection } from '../../state/settingsSearch';
 import {
@@ -23,6 +24,7 @@ import { approvalModes } from '../../state/approvals';
 import AppSelect from '../common/AppSelect.vue';
 import { guidedMode, guidedModes } from '../../../shared/chatModes';
 import RunPolicyFields from './RunPolicyFields.vue';
+import SkillManager from './SkillManager.vue';
 import { t } from '../../theme/themes';
 
 const props = defineProps<{
@@ -38,6 +40,7 @@ const sections: SettingsSection[] = [
   { id: 'providers', label: 'Fallback & approvals', icon: SlidersHorizontal, words: 'fallback order models providers approval mode permissions command rules budget' },
   { id: 'workspace', label: 'Checks & editor', icon: KeyRound, words: 'checks lint typecheck test commands editor external ide open' },
   { id: 'agent', label: 'Instructions & defaults', icon: ScrollText, words: 'instructions agents claude.md defaults model mode prompt' },
+  { id: 'skills', label: 'Skills', icon: Sparkles, words: 'skills instructions slash commands claude codex agents skill.md' },
 ];
 const {
   query: settingsSearch,
@@ -275,6 +278,10 @@ async function save(close = true) {
               :inherited-rules="global.commandRules"
             />
           </template>
+          <SkillManager
+            v-else-if="tab === 'skills'"
+            :workspace="workspace"
+          />
           <template v-else-if="tab === 'agent'">
             <h3>{{ t('Workspace instructions') }}</h3>
             <p class="muted">

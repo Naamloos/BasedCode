@@ -68,6 +68,7 @@ export const GitCompareArrows = icon(Ph.PhGitDiff);
 export const GitFork = icon(Ph.PhGitFork);
 export const GitPullRequest = icon(Ph.PhGitPullRequest);
 export const Globe = icon(Ph.PhGlobe);
+export const GripVertical = icon(Ph.PhDotsSixVertical);
 export const Hand = icon(Ph.PhHand);
 export const History = icon(Ph.PhClockCounterClockwise);
 export const Image = icon(Ph.PhImage);

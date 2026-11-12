@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { extname, join, dirname, resolve } from 'node:path';
+import { basename, extname, join, dirname, resolve } from 'node:path';
 import {
   CancellationTokenSource,
   createMessageConnection,
@@ -27,6 +27,7 @@ import type {
 import type {
   Diagnostic,
   LanguageConfig,
+  LanguageServerStatus,
   LanguageOperation,
   Run,
   Workspace,
@@ -59,6 +60,93 @@ const defaultPackages: Record<string, { package: string; dependencies: string[] 
     package: 'vscode-langservers-extracted',
     dependencies: ['vscode-langservers-extracted'],
   },
+  'vscode-html-language-server': {
+    package: 'vscode-langservers-extracted',
+    dependencies: ['vscode-langservers-extracted'],
+  },
+  'vscode-css-language-server': {
+    package: 'vscode-langservers-extracted',
+    dependencies: ['vscode-langservers-extracted'],
+  },
+  'yaml-language-server': {
+    package: 'yaml-language-server',
+    dependencies: ['yaml-language-server'],
+  },
+  'bash-language-server': {
+    package: 'bash-language-server',
+    dependencies: ['bash-language-server'],
+  },
+  'docker-langserver': {
+    package: 'dockerfile-language-server-nodejs',
+    dependencies: ['dockerfile-language-server-nodejs'],
+  },
+};
+
+/** Per-user tool folders (relative to the home directory) that GUI apps often do not have on PATH. */
+const toolDirectories: Record<string, string[]> = {
+  'csharp-ls': ['.dotnet', 'tools'],
+  'roslyn-language-server': ['.dotnet', 'tools'],
+  gopls: ['go', 'bin'],
+  'rust-analyzer': ['.cargo', 'bin'],
+};
+const dotnetTools = ['csharp-ls', 'roslyn-language-server'];
+
+const languageIds: Record<string, string> = {
+  '.ts': 'typescript',
+  '.mts': 'typescript',
+  '.cts': 'typescript',
+  '.tsx': 'typescriptreact',
+  '.js': 'javascript',
+  '.mjs': 'javascript',
+  '.cjs': 'javascript',
+  '.jsx': 'javascriptreact',
+  '.vue': 'vue',
+  '.svelte': 'svelte',
+  '.astro': 'astro',
+  '.py': 'python',
+  '.pyi': 'python',
+  '.json': 'json',
+  '.jsonc': 'jsonc',
+  '.cs': 'csharp',
+  '.html': 'html',
+  '.htm': 'html',
+  '.css': 'css',
+  '.scss': 'scss',
+  '.less': 'less',
+  '.yaml': 'yaml',
+  '.yml': 'yaml',
+  '.toml': 'toml',
+  '.xml': 'xml',
+  '.md': 'markdown',
+  '.sh': 'shellscript',
+  '.bash': 'shellscript',
+  '.zsh': 'shellscript',
+  '.dockerfile': 'dockerfile',
+  '.go': 'go',
+  '.rs': 'rust',
+  '.c': 'c',
+  '.h': 'c',
+  '.cpp': 'cpp',
+  '.cc': 'cpp',
+  '.cxx': 'cpp',
+  '.hpp': 'cpp',
+  '.hh': 'cpp',
+  '.hxx': 'cpp',
+  '.java': 'java',
+  '.kt': 'kotlin',
+  '.kts': 'kotlin',
+  '.scala': 'scala',
+  '.swift': 'swift',
+  '.dart': 'dart',
+  '.rb': 'ruby',
+  '.php': 'php',
+  '.lua': 'lua',
+  '.zig': 'zig',
+  '.ex': 'elixir',
+  '.exs': 'elixir',
+  '.hs': 'haskell',
+  '.tf': 'terraform',
+  '.sql': 'sql',
 };
 
 interface LanguageConnection {
@@ -81,25 +169,9 @@ export interface CodeActionSummary {
 }
 
 export function languageId(path: string): string {
-  return (
-    (
-      {
-        '.ts': 'typescript',
-        '.mts': 'typescript',
-        '.cts': 'typescript',
-        '.tsx': 'typescriptreact',
-        '.js': 'javascript',
-        '.mjs': 'javascript',
-        '.cjs': 'javascript',
-        '.jsx': 'javascriptreact',
-        '.vue': 'vue',
-        '.py': 'python',
-        '.json': 'json',
-        '.jsonc': 'jsonc',
-        '.cs': 'csharp',
-      } as Record<string, string>
-    )[extname(path).toLowerCase()] ?? 'plaintext'
-  );
+  // Dockerfile, Dockerfile.dev and Containerfile carry no usable extension.
+  if (/^(dockerfile|containerfile)(\.|$)/i.test(basename(path))) return 'dockerfile';
+  return languageIds[extname(path).toLowerCase()] ?? 'plaintext';
 }
 
 /**
@@ -170,14 +242,14 @@ export class Languages {
       );
       if (local) return { ...config, ...local };
     }
+    const toolDirectory = toolDirectories[config.command];
     const executable =
       findExecutable(config.command) ??
-      (['csharp-ls', 'roslyn-language-server'].includes(config.command)
+      (toolDirectory
         ? findExecutable(
             join(
               homedir(),
-              '.dotnet',
-              'tools',
+              ...toolDirectory,
               process.platform === 'win32' ? `${config.command}.exe` : config.command,
             ),
           )
@@ -185,16 +257,20 @@ export class Languages {
     return executable ? { ...config, command: executable } : undefined;
   }
 
-  async discoverServers(workspace: Workspace) {
+  async discoverServers(workspace: Workspace): Promise<LanguageServerStatus[]> {
     return Promise.all(
-      this.store.global().languageServers.map(async (config) => ({
-        ...config,
-        available: Boolean(await this.discover(workspace, config)),
-        canInstall: Boolean(
-          defaultPackages[config.command] ||
-          ['csharp-ls', 'roslyn-language-server'].includes(config.command),
-        ),
-      })),
+      this.store.global().languageServers.map(async (config) => {
+        const found = await this.discover(workspace, config);
+        return {
+          ...config,
+          available: Boolean(found),
+          canInstall: Boolean(
+            defaultPackages[config.command] || dotnetTools.includes(config.command),
+          ),
+          resolved: found && [found.command, ...found.args].join(' '),
+          running: this.connections.has(`${workspace.id}:${config.id}`),
+        };
+      }),
     );
   }
 
@@ -226,9 +302,7 @@ export class Languages {
     run?: Run,
   ): Promise<LanguageConfig> {
     const npm = defaultPackages[config.command];
-    const dotnetPackage = ['csharp-ls', 'roslyn-language-server'].includes(config.command)
-      ? config.command
-      : undefined;
+    const dotnetPackage = dotnetTools.includes(config.command) ? config.command : undefined;
     const dotnet = dotnetPackage ? findExecutable('dotnet') : undefined;
     if (!npm && !dotnet)
       throw new Error(

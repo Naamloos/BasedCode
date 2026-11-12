@@ -14,9 +14,9 @@ const based: Dictionary = {
   'BasedCode stopped while the last prompt was running. Some of its work may be half done.': 'BasedCode rage-quit mid-prompt. Some work may be half done.',
   // Chat groups, plain chats, rubber duck mode
   'New plain chat (no workspace)': 'Touch grass chat (no map)', 'New rubber duck debugging chat': 'Summon the duck', 'New chat in {name}': 'New game+ on {name}', 'Plain chats without a workspace': 'Lobbies with no map, just vibes', 'No chats yet.': 'Empty lobby.', 
-  'App settings': 'Game settings (no cap)', 'Models': 'Character select', 'Approvals & context': 'Trust issues & lore', 'Appearance': 'Drip & cosmetics',
+  'App settings': 'Game settings (no cap)', 'Models': 'Character select', 'Providers': 'Character select', 'Approvals & context': 'Trust issues & lore', 'Appearance': 'Drip & cosmetics',
   'Keybindings': 'Keybinds (pro config)', 'Usage': 'Post-match stats',  'Tools': 'Loadout',
-  'Language': 'Rizz dialect', 'Theme': 'Skin', 'Flames': 'RGB fire', 'Your model lineup': 'Your main squad',
+  'Language': 'Rizz dialect', 'Theme': 'Skin', 'Flames': 'RGB fire', 'Your model lineup': 'Your main squad', 'Your providers': 'Your main squad',
   'Default approval mode': 'Default trust level', 'Keyboard shortcuts': 'Pro keybinds', 'Enable all': 'Unbench the whole roster', 'BasedCode tools': 'BasedCode loadout',
   'Save': 'GG, save', 'Cancel': 'Nahh, alt+F4 that', 'Settings apply to every workspace.': 'These settings are global. Every server, every lobby.',
   'New chat': 'New game+', 'CHATS': 'LOBBIES', 'Chats': 'Lobbies', 'Actions': 'Combo moves', 'Workspace settings': 'Map settings',

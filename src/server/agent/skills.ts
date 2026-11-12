@@ -1,16 +1,21 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import type { Workspace } from "../../shared/types.js";
 import { fileTree, readText } from "../workspace/workspace.js";
 
 export const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const maxSkillLength = 50_000;
-const workspaceRoot = ".basedcode/skills";
+/** Skill folder families in lookup order; BasedCode's own comes first and is where new skills go by default. */
+export const skillSources = ["basedcode", "claude", "codex", "agents"] as const;
+export type SkillSource = (typeof skillSources)[number];
+export type SkillScope = "workspace" | "global";
+const sourceFolder = (source: SkillSource) => `.${source}/skills`;
 
 export interface Skill {
   name: string;
-  scope: "workspace" | "global";
+  scope: SkillScope;
+  source: SkillSource;
   /** Workspace-relative for workspace skills, absolute for global ones. */
   path: string;
   content: string;
@@ -21,33 +26,36 @@ const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "E
 
 /** Global skill folders in lookup order; the first is where new global skills are written. */
 export function globalSkillRoots(home = homedir()) {
-  return [".basedcode", ".claude", ".codex", ".agents"].map((folder) => join(home, folder, "skills"));
+  return skillSources.map((source) => join(home, `.${source}`, "skills"));
 }
 
-async function workspaceSkills(workspace: Workspace): Promise<Skill[]> {
+async function workspaceSkills(workspace: Workspace, source: SkillSource): Promise<Skill[]> {
+  const root = sourceFolder(source);
   let entries;
   try {
-    entries = await fileTree(workspace, workspaceRoot);
+    entries = await fileTree(workspace, root);
   } catch (error) {
-    if (missing(error)) return [];
+    // Folders outside the workspace boundary (or unreadable ones) simply have no skills to offer.
+    if (missing(error) || source !== "basedcode") return [];
     throw error;
   }
   const skills: Skill[] = [];
   for (const entry of entries) {
     if (!entry.directory || !validName(entry.name)) continue;
-    const path = `${workspaceRoot}/${entry.name}/SKILL.md`;
+    const path = `${root}/${entry.name}/SKILL.md`;
     try {
       const { content, binary } = await readText(workspace, path);
       if (!binary && content.length <= maxSkillLength)
-        skills.push({ name: entry.name, scope: "workspace", path, content });
+        skills.push({ name: entry.name, scope: "workspace", source, path, content });
     } catch (error) {
-      if (!missing(error)) throw error;
+      if (!missing(error) && source === "basedcode") throw error;
     }
   }
   return skills;
 }
 
-async function globalSkills(root: string): Promise<Skill[]> {
+async function globalSkills(source: SkillSource, home = homedir()): Promise<Skill[]> {
+  const root = join(home, `.${source}`, "skills");
   let entries;
   try {
     entries = await readdir(root, { withFileTypes: true });
@@ -61,7 +69,7 @@ async function globalSkills(root: string): Promise<Skill[]> {
     try {
       const content = await readFile(path, "utf8");
       if (!content.includes("\0") && content.length <= maxSkillLength)
-        skills.push({ name: entry.name, scope: "global", path, content });
+        skills.push({ name: entry.name, scope: "global", source, path, content });
     } catch {
       // Not a skill folder (or unreadable): skip it like a folder without SKILL.md.
     }
@@ -69,13 +77,72 @@ async function globalSkills(root: string): Promise<Skill[]> {
   return skills;
 }
 
-/** Every skill by name; a workspace skill shadows a global one, earlier global roots shadow later ones. */
+/**
+ * Every skill in every folder, in lookup order: workspace folders first, then global ones, each in `skillSources`
+ * order. Names can repeat; the first one wins (see listSkills).
+ */
+export async function listAllSkills(workspace: Workspace | undefined, home = homedir()): Promise<Skill[]> {
+  const found: Skill[][] = [];
+  if (workspace) for (const source of skillSources) found.push(await workspaceSkills(workspace, source));
+  for (const source of skillSources) found.push(await globalSkills(source, home));
+  return found.flat();
+}
+
+/** Every skill by name; a workspace skill shadows a global one, earlier folders shadow later ones. */
 export async function listSkills(workspace: Workspace): Promise<Skill[]> {
-  const found = [await workspaceSkills(workspace)];
-  for (const root of globalSkillRoots()) found.push(await globalSkills(root));
   const byName = new Map<string, Skill>();
-  for (const skill of found.flat()) if (!byName.has(skill.name)) byName.set(skill.name, skill);
+  for (const skill of await listAllSkills(workspace)) if (!byName.has(skill.name)) byName.set(skill.name, skill);
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The `description:` line of a SKILL.md front matter block, if any. */
+export function skillDescription(content: string): string | undefined {
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+  const line = front?.[1].split(/\r?\n/).find((item) => /^description\s*:/.test(item));
+  const value = line?.replace(/^description\s*:\s*/, "").trim().replace(/^(["'])(.*)\1$/, "$2");
+  return value || undefined;
+}
+
+/** Absolute path of a global skill's SKILL.md. */
+export function globalSkillPath(source: SkillSource, name: string, home = homedir()) {
+  if (!validName(name)) throw new Error("Invalid skill name.");
+  return join(home, `.${source}`, "skills", name, "SKILL.md");
+}
+
+/** Workspace-relative path of a workspace skill's SKILL.md. */
+export function workspaceSkillPath(source: SkillSource, name: string) {
+  if (!validName(name)) throw new Error("Invalid skill name.");
+  return `${sourceFolder(source)}/${name}/SKILL.md`;
+}
+
+/**
+ * Creates, updates (content) or deletes (content undefined) a global skill. Needs the exact current content, so a
+ * stale editor never overwrites a newer file. Deleting removes SKILL.md and the folder only when nothing else is in it.
+ */
+export async function changeGlobalSkill(
+  source: SkillSource,
+  name: string,
+  content: string | undefined,
+  expectedContent: string | undefined,
+  home = homedir(),
+) {
+  const path = globalSkillPath(source, name, home);
+  let previous: string | undefined;
+  try {
+    previous = await readFile(path, "utf8");
+  } catch (error) {
+    if (!missing(error)) throw error;
+  }
+  if (previous !== expectedContent) throw new Error("Skill changed. Refresh the list before saving.");
+  if (content === undefined) {
+    if (previous === undefined) throw new Error("Skill no longer exists.");
+    await unlink(path);
+    await rmdir(dirname(path)).catch(() => undefined);
+    return { path };
+  }
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content, previous === undefined ? { flag: "wx" } : {});
+  return { path };
 }
 
 export async function readSkill(workspace: Workspace, name: string): Promise<Skill> {

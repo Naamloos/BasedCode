@@ -14,7 +14,7 @@ export function createSkillTools(
   return [
     definition(
       "list_skills",
-      "List skills available for activation: workspace ones and global ones (~/.basedcode, ~/.claude, ~/.codex, ~/.agents skills folders; a workspace skill shadows a global one of the same name). Activate with /skill <name> or @name in a message.",
+      "List skills available for activation: workspace ones and global ones (.basedcode, .claude, .codex and .agents skills folders, in the workspace and in ~; a workspace skill shadows a global one of the same name). Activate with /skill <name> or @name in a message.",
       {},
       async () => ({
         skills: (await listSkills(workspace)).map(({ content, ...skill }) => ({
