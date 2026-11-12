@@ -14,7 +14,10 @@ import {
   CircleDot,
   CircleCheck,
   Undo2,
+  Square,
 } from '../../icons';
+import { rpc } from '../../services/api';
+import { commandTerminal } from '../../utils/status';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Message, TerminalInfo } from '../../../shared/types';
 import McpApp from '../visuals/McpApp.vue';
@@ -65,19 +68,12 @@ const legacyResources = computed(() =>
     ? legacyMcpResources(tool.value.result?.result)
     : [],
 );
-// The terminal behind a running foreground run_command call: the same tab shown in the terminal panel, if open.
-const liveTerminal = computed(() =>
-  ['run_command', 'run_checks'].includes(tool.value.name) && tool.value.status === 'running'
-    ? props.terminals?.find(
-        (terminal) =>
-          terminal.runId === props.message.runId &&
-          terminal.kind === 'command' &&
-          terminal.status === 'running' &&
-          (tool.value.name === 'run_checks' ||
-            terminal.title === String(tool.value.args.command).slice(0, 70)),
-      )
-    : undefined,
-);
+const liveTerminal = computed(() => commandTerminal(props.message, props.terminals));
+function stopCommand() {
+  const terminalId = liveTerminal.value?.id;
+  // A failure here almost always means the command just finished on its own.
+  if (terminalId) void rpc('terminal.stop', { terminalId }).catch(() => undefined);
+}
 const finishedOutput = computed(() =>
   tool.value.name === 'run_command' &&
   tool.value.status !== 'running' &&
@@ -153,6 +149,15 @@ const summary = computed(() => {
           :size="14"
           class="success-text"
         />
+        <button
+          v-if="liveTerminal"
+          type="button"
+          class="text-button tool-stop"
+          :title="t('Stop this command')"
+          @click.stop.prevent="stopCommand"
+        >
+          <Square :size="11" /> {{ t('Stop') }}
+        </button>
         <button
           v-if="rewindable && tool.status !== 'running'"
           type="button"
@@ -257,6 +262,11 @@ summary:hover .tool-rewind,
   .tool-rewind {
     opacity: 1;
   }
+}
+.tool-stop {
+  margin-left: 4px;
+  padding: 0 6px;
+  height: 20px;
 }
 .plan-list {
   list-style: none;

@@ -241,6 +241,16 @@
   flex: 1;
   border-top: 1px solid var(--border);
 }
+.mode-switch-context {
+  max-width: 80%;
+  margin: 0 auto 6px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 /* User messages: a right-aligned accent-tinted bubble. Assistant replies are plain text. */
 .user-message {
   display: flex;
@@ -365,6 +375,10 @@
 .tool-group > summary:hover {
   color: var(--text);
   background: var(--tint-hover);
+}
+.tool-group-stop {
+  padding: 0 6px;
+  height: 20px;
 }
 .tool-group-count {
   display: inline-flex;

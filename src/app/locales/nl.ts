@@ -169,8 +169,10 @@ const nl: Dictionary = {
   'Restore files and conversation before this prompt': 'Bestanden en gesprek herstellen naar vóór deze prompt',
   'Sent while the agent was working; delivered into the running prompt': 'Verstuurd terwijl de agent bezig was; afgeleverd in de lopende prompt', 'click to preview': 'klik voor voorbeeld',
 
+  // Browser preview
+  'Agent browser': 'Browser van de agent', 'Live browser': 'Live browser', 'Browser session ended': 'Browsersessie beëindigd', 'Smaller preview': 'Kleinere voorvertoning', 'Larger preview': 'Grotere voorvertoning', 'Show preview': 'Voorvertoning tonen', 'Hide preview': 'Voorvertoning verbergen', 'Close browser preview': 'Browservoorvertoning sluiten', 'Agent browser live preview': 'Live voorvertoning van de browser van de agent',
   // Composer
-  'Stop': 'Stoppen', 'Queue': 'In wachtrij', 'Compact': 'Samenvatten', 'messages you send now steer this prompt': 'berichten die je nu stuurt, sturen deze prompt bij',
+  'Stop': 'Stoppen', 'Stop this command': 'Deze opdracht stoppen', 'Queue': 'In wachtrij', 'Compact': 'Samenvatten', 'messages you send now steer this prompt': 'berichten die je nu stuurt, sturen deze prompt bij',
   'Queued prompts': 'Prompts in wachtrij', 'Remove from the queue': 'Uit de wachtrij verwijderen', 'Pasted image': 'Geplakte afbeelding', 'Uploading…': 'Uploaden…', 'Remove {name}': '{name} verwijderen',
   'What should we work on?': 'Waar gaan we aan werken?', 'Open a workspace to start a conversation': 'Open een werkruimte om een gesprek te beginnen',
   'Queue a prompt while compacting': 'Zet een prompt in de wachtrij tijdens het samenvatten', 'Queue the next prompt': 'Zet de volgende prompt in de wachtrij',

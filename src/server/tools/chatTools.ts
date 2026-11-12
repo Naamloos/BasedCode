@@ -39,6 +39,17 @@ export function createChatTools(
 ): ToolDefinition[] {
   return [
     definition(
+      'prompt_time_limit',
+      'Set the user-requested deadline for this prompt, or omit deadline to check the current time and seconds remaining. The harness forcibly stops the prompt and its commands ONE MINUTE BEFORE the deadline, including during tools or approval waits. Applies only to this prompt; use only when the user requests a time limit, and never extend it without their instruction. A deadline less than a minute away stops work immediately.',
+      {
+        deadline: z.iso.datetime({ offset: true }).optional().describe('User deadline as ISO 8601 with Z or an explicit timezone offset; omit to check time remaining.'),
+      },
+      async ({ deadline }) => {
+        if (!context.timeLimit) throw new Error('No active prompt timer is available.');
+        return context.timeLimit.check(deadline);
+      },
+    ),
+    definition(
       'set_chat_title',
       'Name this chat in the sidebar: 2 to 6 words saying what the conversation is about, in the language the user writes in, no quotes or trailing period. Call it once early in a new chat, and again only if the topic clearly changes. It fails when the user has named the chat themselves.',
       { title: z.string().trim().min(2).max(80).describe('The new chat title') },

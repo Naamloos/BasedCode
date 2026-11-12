@@ -84,7 +84,7 @@ test("browser tools navigate, fill, click and screenshot a local page", async ()
   const controller = new AbortController();
   const context = {
     workspace: { id: "workspace" },
-    run: { id: "run" },
+    run: { id: "run", chatId: "chat" },
     signal: controller.signal,
   } as ToolContext;
   const attachmentDirectory = await mkdtemp(
@@ -92,6 +92,9 @@ test("browser tools navigate, fill, click and screenshot a local page", async ()
   );
   const saved: Record<string, unknown>[] = [];
   const previews: { active: boolean; image?: string; url?: string }[] = [];
+  const frames: Buffer[] = [];
+  let frameEnds = 0;
+  let closeBrowser: (() => Promise<void>) | undefined;
   const services = {
     attachmentDirectory,
     store: {
@@ -107,9 +110,22 @@ test("browser tools navigate, fill, click and screenshot a local page", async ()
         metadata: Record<string, unknown>,
       ) => saved.push(metadata),
     },
-    events: { publish: (type: string, data: { active: boolean; image?: string; url?: string }) => {
-      if (type === "browser-preview") previews.push(data);
-    } },
+    events: {
+      registerBrowser: async (_chatId: string, close: () => Promise<void>) => {
+        await closeBrowser?.();
+        closeBrowser = close;
+      },
+      closeBrowser: async () => {
+        const close = closeBrowser;
+        closeBrowser = undefined;
+        await close?.();
+      },
+      publish: (type: string, data: { active: boolean; image?: string; url?: string }) => {
+        if (type === "browser-preview") previews.push(data);
+      },
+      frame: (_chatId: string, image: Buffer) => frames.push(image),
+      frameEnd: () => { frameEnds++; },
+    },
     permissions: {
       ask: async (_workspace: string, _title: string, detail: string) => {
         if (detail.includes("127.0.0.2")) throw new Error("Denied origin");
@@ -122,7 +138,7 @@ test("browser tools navigate, fill, click and screenshot a local page", async ()
     shape,
     execute: async (args) => handler(z.object(shape).parse(args), () => {}),
   });
-  const tools = createBrowserTools(context, services, define);
+  let tools = createBrowserTools(context, services, define);
   const call = (name: string, args: Record<string, unknown> = {}) =>
     tools.find((tool) => tool.name === name)!.execute(args);
   try {
@@ -238,8 +254,18 @@ test("browser tools navigate, fill, click and screenshot a local page", async ()
     const frame = previews.find((item) => item.url?.startsWith("http:") && item.image);
     assert.ok(frame?.image, "live preview emits frames without screenshot calls");
     assert.equal(Buffer.from(frame.image, "base64").subarray(0, 2).toString("hex"), "ffd8");
+    assert.ok(frames.length, "live stream receives screencast frames");
+    assert.equal(frames[0].subarray(0, 2).toString("hex"), "ffd8");
+    controller.abort();
+    tools = createBrowserTools({
+      ...context,
+      run: { ...context.run, id: "next-run" },
+      signal: new AbortController().signal,
+    }, services, define);
+    await call("browser_inspect");
     await call("browser_control", { action: "close" });
     assert.equal(previews.at(-1)?.active, false);
+    assert.equal(frameEnds, 1, "live stream ends when the browser closes");
     const countAfterClose = previews.length;
     await new Promise((resolve) => setTimeout(resolve, 650));
     assert.equal(previews.length, countAfterClose, "preview stops when browser closes");
@@ -254,6 +280,8 @@ test("browser tools navigate, fill, click and screenshot a local page", async ()
     );
   } finally {
     controller.abort();
+    assert.equal(previews.at(-1)?.active, true, "browser survives the run ending");
+    await services.events.closeBrowser("chat");
     assert.equal(previews.at(-1)?.active, false);
     await rm(attachmentDirectory, { recursive: true, force: true });
     await new Promise<void>((resolve, reject) =>

@@ -9,7 +9,7 @@ import {
   CircleX,
   Unplug,
 } from '../icons';
-import type { RunStatus, TerminalInfo } from '../../shared/types';
+import type { Message, RunStatus, TerminalInfo } from '../../shared/types';
 import { t } from '../theme/i18n';
 
 // Every state gets an icon and a word, so it never depends on color alone.
@@ -42,6 +42,26 @@ export const terminalKind: Record<TerminalInfo['kind'], string> = {
   command: 'Agent command',
   service: 'Service',
 };
+
+/** The terminal behind a running foreground run_command/run_checks call: the same tab the terminal panel shows. */
+export function commandTerminal(
+  message: Message,
+  terminals: TerminalInfo[] | undefined,
+): TerminalInfo | undefined {
+  const tool = message.metadata.tool as
+    | { name?: string; status?: string; args?: Record<string, unknown> }
+    | undefined;
+  if (!tool || tool.status !== 'running' || !['run_command', 'run_checks'].includes(tool.name ?? ''))
+    return undefined;
+  return terminals?.find(
+    (terminal) =>
+      terminal.runId === message.runId &&
+      terminal.kind === 'command' &&
+      terminal.status === 'running' &&
+      (tool.name === 'run_checks' ||
+        terminal.title === String(tool.args?.command).slice(0, 70)),
+  );
+}
 
 export function terminalState(info: TerminalInfo): string {
   if (info.status === 'running') return t('Running');

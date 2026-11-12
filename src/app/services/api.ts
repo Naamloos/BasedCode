@@ -29,6 +29,12 @@ export function attachmentUrl(id: string): string {
   return `${connection.origin}/attachment?${new URLSearchParams({ id, token: connection.token })}`;
 }
 
+/** The agent browser's live MJPEG stream. Absent over remote access: tunnels buffer streamed responses. */
+export function browserStreamUrl(chatId: string, session: number): string | undefined {
+  if (remote) return undefined;
+  return `${connection.origin}/browser-stream?${new URLSearchParams({ chatId, session: String(session), token: connection.token })}`;
+}
+
 let pendingMcpCall: Promise<unknown> = Promise.resolve();
 
 export function rpc<T = unknown>(method: string, params: unknown = {}): Promise<T> {

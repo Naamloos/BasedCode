@@ -77,8 +77,57 @@ export class Updates {
         this.release = undefined;
         return { supported: true, current, available: false };
       }
-      if (!response.ok) throw new Error(`GitHub answered ${response.status}.`);
-      const release = (await response.json()) as Release;
+      let release: Release;
+      if (response.status === 403 || response.status === 429) {
+        await response.body?.cancel();
+        // Public release pages remain available when the unauthenticated API is rate limited.
+        const page = await fetch(
+          `https://github.com/${repository}/releases/latest`,
+          {
+            signal: AbortSignal.timeout(15_000),
+          },
+        );
+        await page.body?.cancel();
+        if (!page.ok) throw new Error(`GitHub answered ${page.status}.`);
+        const location = new URL(page.url);
+        const tag = decodeURIComponent(
+          location.pathname.split('/').at(-1) ?? '',
+        );
+        if (
+          location.origin !== 'https://github.com' ||
+          location.pathname !==
+            `/${repository}/releases/tag/${encodeURIComponent(tag)}` ||
+          !/^v?\d+\.\d+\.\d+$/.test(tag)
+        )
+          throw new Error('GitHub did not return a stable release.');
+        const name = `BasedCode-Setup-${tag.replace(/^v/, '')}.exe`;
+        const downloadUrl = `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${name}`;
+        const asset = await fetch(downloadUrl, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!asset.ok && asset.status !== 404)
+          throw new Error(`GitHub answered ${asset.status}.`);
+        release = {
+          tag_name: tag,
+          html_url: page.url,
+          draft: false,
+          prerelease: false,
+          assets: asset.ok
+            ? [
+                {
+                  name,
+                  size: Number(asset.headers.get('content-length')) || 0,
+                  browser_download_url: downloadUrl,
+                },
+              ]
+            : [],
+        };
+      } else {
+        if (!response.ok)
+          throw new Error(`GitHub answered ${response.status}.`);
+        release = (await response.json()) as Release;
+      }
       const latest = release.tag_name.replace(/^v/, '');
       const hasAsset = release.assets.some((asset) => assetPattern.test(asset.name));
       this.release = release;

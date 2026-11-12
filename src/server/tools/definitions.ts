@@ -3,6 +3,7 @@ import type { Run, Workspace } from '../../shared/types.js';
 import type { Languages } from '../integrations/languages.js';
 import type { McpConnections } from '../integrations/mcp.js';
 import type { Processes } from '../runtime/processes.js';
+import type { PromptTimeLimit } from '../runtime/promptTimeLimit.js';
 import type { Events } from '../storage/events.js';
 import type { Store } from '../storage/store.js';
 import type { Permissions } from '../workspace/permissions.js';
@@ -79,6 +80,7 @@ export interface ToolContext {
   workspace: Workspace;
   run: Run;
   signal: AbortSignal;
+  timeLimit?: PromptTimeLimit;
   /** Called after a tool call's chat message exists and before it runs; used for rewind snapshots. */
   beforeTool?: (name: string, messageId: string) => Promise<void>;
 }
@@ -99,6 +101,7 @@ export const readOnlyTools = new Set([
   'language_servers',
   'language_query',
   'update_plan',
+  'prompt_time_limit',
 ]);
 
 /** Services shared by the concrete tool groups; each group uses its own subset. */

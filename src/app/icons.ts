@@ -85,6 +85,7 @@ export const LogOut = icon(Ph.PhSignOut);
 export const Maximize2 = icon(Ph.PhArrowsOut);
 export const MessageSquare = icon(Ph.PhChatCircle);
 export const MessageSquareQuote = icon(Ph.PhQuotes);
+export const Minimize2 = icon(Ph.PhArrowsIn);
 export const MoreHorizontal = icon(Ph.PhDotsThree);
 export const Navigation = icon(Ph.PhNavigationArrow);
 export const Network = icon(Ph.PhGraph);

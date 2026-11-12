@@ -1144,6 +1144,7 @@ async function resetTemplate() {
           <UsageDashboard
             v-else-if="tab === 'usage'"
             :limits="limits"
+            :providers="global.providers"
             @refreshed="emit('saved')"
           />
 

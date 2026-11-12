@@ -54,6 +54,7 @@ import { estimateCost } from '../providers/pricing.js';
 import { reasoningFetch, withoutReasoning } from '../providers/reasoning.js';
 import { cleanOutput } from '../runtime/output.js';
 import { Processes } from '../runtime/processes.js';
+import { PromptTimeLimit } from '../runtime/promptTimeLimit.js';
 import { Events } from '../storage/events.js';
 import { Store } from '../storage/store.js';
 import {
@@ -643,6 +644,10 @@ export class Agent {
     controller: AbortController,
   ): Promise<void> {
     const signal = controller.signal;
+    const timeLimit = new PromptTimeLimit(() => {
+      controller.abort(new Error('Prompt time limit reached. Stopped one minute before the requested deadline.'));
+      void this.processes.stopRuns(new Set([run.id]));
+    });
     let checkpointStarted = false;
     try {
       const chat = this.store.get('chat', run.chatId);
@@ -681,6 +686,7 @@ export class Agent {
         workspace,
         run,
         signal,
+        timeLimit,
         // Snapshot before every call that can change files, so the run can be rewound to just before it.
         beforeTool: async (name, messageId) => {
           if (!checkpointStarted || !fileChangingTools.has(name)) return;
@@ -856,6 +862,7 @@ export class Agent {
         else await this.local(finisher, run, signal, definitions, instructions);
         checks = await this.verify(workspace, run, signal);
       }
+      signal.throwIfAborted();
       for (const check of checks) delete check.output;
       const summary = checks.length
         ? checks
@@ -876,7 +883,7 @@ export class Agent {
       this.update(run, { status: 'completed' });
     } catch (error) {
       const stalled = this.active.get(run.id)?.stalled;
-      const reason: unknown = stalled ? signal.reason : error;
+      const reason: unknown = signal.aborted ? signal.reason : error;
       this.update(run, {
         reconnecting: undefined,
         status: stalled ? 'interrupted' : signal.aborted ? 'cancelled' : 'failed',
@@ -886,7 +893,8 @@ export class Agent {
         error: true,
       });
     } finally {
-      // End run-scoped resources, including any browser session, after all provider work.
+      // End run-scoped resources after all provider work; browsers live until explicitly closed.
+      timeLimit.clear();
       controller.abort();
       if (checkpointStarted) {
         try {

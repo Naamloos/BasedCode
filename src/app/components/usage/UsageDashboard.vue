@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { RefreshCw, Trash2 } from "../../icons";
 import { confirmAction } from "../../state/dialogs";
 import type {
+  ProviderConfig,
   ProviderLimits,
   UsageReport,
   UsageTotals,
@@ -18,7 +19,10 @@ import {
 } from "../../utils/format";
 import { t } from "../../theme/themes";
 
-const props = defineProps<{ limits: ProviderLimits[] }>();
+const props = defineProps<{
+  limits: ProviderLimits[];
+  providers: ProviderConfig[];
+}>();
 const emit = defineEmits<{ refreshed: [] }>();
 const report = ref<UsageReport>();
 const error = ref("");
@@ -262,7 +266,12 @@ const storageParts = computed(() => {
     },
   ].filter((part) => part.key !== "legacy" || part.bytes);
 });
-const limitKinds = ["codex", "claude", "antigravity"] as const;
+// Only kinds with a saved connection; a disconnected provider's old windows are just noise.
+const limitKinds = computed(() =>
+  (["codex", "claude", "antigravity"] as const).filter((kind) =>
+    props.providers.some((provider) => provider.kind === kind),
+  ),
+);
 const rangeIndex = computed(() =>
   ranges.findIndex((item) => item.key === range.value),
 );
@@ -280,59 +289,61 @@ const rangeIndex = computed(() =>
     </p>
 
     <!-- Plan limits: independent of the time range, so they sit above it. -->
-    <h4>{{ t("Subscription windows") }}</h4>
-    <div class="ud-limits">
-      <section
-        v-for="kind in limitKinds"
-        :key="kind"
-        class="ud-card ud-limit"
-      >
-        <header>
-          <span
-            class="model-dot"
-            :class="kind"
-          />
-          <strong>{{ kindNames[kind] }}</strong>
-          <button
-            type="button"
-            class="icon-button"
-            :disabled="checking === kind"
-            :aria-label="t(kind === 'claude' ? 'Check now' : 'Refresh')"
-            :title="
-              t(
-                kind === 'codex'
-                  ? 'Read the current windows from your Codex account (uses no quota)'
-                  : kind === 'antigravity'
-                    ? 'Read the current windows from your Antigravity account (uses no quota)'
-                    : 'Send one tiny Haiku request so Claude Code reports current windows (uses a very small amount of quota)',
-              )
-            "
-            @click="check(kind)"
-          >
-            <RefreshCw
-              :size="13"
-              :class="{ spin: checking === kind }"
-            />
-          </button>
-        </header>
-        <LimitWindows
-          v-if="limitsFor(kind)?.windows.length"
-          :limits="limitsFor(kind)"
-        />
-        <p
-          v-else
-          class="muted small"
+    <template v-if="limitKinds.length">
+      <h4>{{ t("Subscription windows") }}</h4>
+      <div class="ud-limits">
+        <section
+          v-for="kind in limitKinds"
+          :key="kind"
+          class="ud-card ud-limit"
         >
-          {{
-            t(
-              kind === "claude"
-                ? "Claude Code reports its windows with model responses. They appear after your next Claude prompt, or use Check now."
-                : "Not read yet.",
-            )
-          }}
-        </p>
-      </section>
-    </div>
+          <header>
+            <span
+              class="model-dot"
+              :class="kind"
+            />
+            <strong>{{ kindNames[kind] }}</strong>
+            <button
+              type="button"
+              class="icon-button"
+              :disabled="checking === kind"
+              :aria-label="t(kind === 'claude' ? 'Check now' : 'Refresh')"
+              :title="
+                t(
+                  kind === 'codex'
+                    ? 'Read the current windows from your Codex account (uses no quota)'
+                    : kind === 'antigravity'
+                      ? 'Read the current windows from your Antigravity account (uses no quota)'
+                      : 'Send one tiny Haiku request so Claude Code reports current windows (uses a very small amount of quota)',
+                )
+              "
+              @click="check(kind)"
+            >
+              <RefreshCw
+                :size="13"
+                :class="{ spin: checking === kind }"
+              />
+            </button>
+          </header>
+          <LimitWindows
+            v-if="limitsFor(kind)?.windows.length"
+            :limits="limitsFor(kind)"
+          />
+          <p
+            v-else
+            class="muted small"
+          >
+            {{
+              t(
+                kind === "claude"
+                  ? "Claude Code reports its windows with model responses. They appear after your next Claude prompt, or use Check now."
+                  : "Not read yet.",
+              )
+            }}
+          </p>
+        </section>
+      </div>
+    </template>
 
     <div class="ud-section-head">
       <h4>{{ t("Activity") }}</h4>

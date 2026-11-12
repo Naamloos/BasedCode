@@ -162,7 +162,7 @@ import {
   webglRenderer,
 } from './theme/effects';
 import { installAntics } from './theme/antics';
-import { runStatus, notableRunStates } from './utils/status';
+import { runStatus, notableRunStates, commandTerminal } from './utils/status';
 import { vAutoscroll } from './directives/autoscroll';
 import { useAttachments } from './state/attachments';
 import { usePaneLayout } from './state/paneLayout';
@@ -782,6 +782,18 @@ watch(findText, () => {
 watch(chatId, closeFind);
 
 // ---- Tool groups: one quiet row, "✓ Worked for 12s · 6 steps" ----
+/** A command still running in this group, so it can be stopped without opening the group. */
+function groupCommandTerminal(tools: Message[]) {
+  for (const tool of tools) {
+    const terminal = commandTerminal(tool, terminals.value);
+    if (terminal) return terminal;
+  }
+  return undefined;
+}
+function stopTerminal(terminalId: string) {
+  // A failure here almost always means the command just finished on its own.
+  void rpc('terminal.stop', { terminalId }).catch(() => undefined);
+}
 function toolGroupState(tools: Message[]) {
   const statuses = tools.map(
     (tool) => (tool.metadata.tool as { status?: string } | undefined)?.status,
@@ -1177,6 +1189,14 @@ function openHandOff(target: Chat) {
 function modeSwitchLabel(value: unknown): string {
   const { from, to } = value as { from: string; to: string };
   return t('Switched from {from} to {to}', { from: t(from), to: t(to) });
+}
+const handOffContextMarker = '\n\nContext from the user for this hand-off:\n';
+/** The context typed for a mode switch. Older switches only have it inside the hand-off prompt. */
+function modeSwitchContext(message: { content: string; metadata: Record<string, unknown> }): string {
+  const stored = (message.metadata.modeSwitch as { context?: unknown }).context;
+  if (typeof stored === 'string') return stored;
+  const at = message.content.indexOf(handOffContextMarker);
+  return at < 0 ? '' : message.content.slice(at + handOffContextMarker.length).trim();
 }
 /** The composer's mode chip: an empty chat just takes the mode; otherwise confirm (with context) in the hand-off dialog. */
 async function switchMode(mode: Exclude<ChatMode, 'review'>) {
@@ -3806,10 +3826,20 @@ onBeforeUnmount(() => {
             >
               <div
                 v-if="message.role === 'user' && message.metadata.modeSwitch"
-                class="mode-switch-note"
-                role="note"
+                class="mode-switch"
               >
-                {{ modeSwitchLabel(message.metadata.modeSwitch) }}
+                <div
+                  class="mode-switch-note"
+                  role="note"
+                >
+                  {{ modeSwitchLabel(message.metadata.modeSwitch) }}
+                </div>
+                <p
+                  v-if="modeSwitchContext(message)"
+                  class="mode-switch-context"
+                >
+                  {{ modeSwitchContext(message) }}
+                </p>
               </div>
               <article
                 v-else-if="message.role === 'user'"
@@ -3966,7 +3996,15 @@ onBeforeUnmount(() => {
                     class="success-text"
                   /><span>{{
                     toolGroupLabel(groupedTools)
-                  }}</span><ChevronRight
+                  }}</span><button
+                    v-if="groupCommandTerminal(groupedTools)"
+                    type="button"
+                    class="text-button tool-group-stop"
+                    :title="t('Stop this command')"
+                    @click.stop.prevent="stopTerminal(groupCommandTerminal(groupedTools)!.id)"
+                  >
+                    <Square :size="11" /> {{ t('Stop') }}
+                  </button><ChevronRight
                     :size="13"
                     class="disclosure"
                   />
@@ -4183,6 +4221,7 @@ onBeforeUnmount(() => {
         <BrowserPreview
           :chat-id="chatId"
           :workspace-id="workspaceId"
+          :busy="!!chatId && chatBusy(chatId)"
         />
         <div class="composer-area">
           <div

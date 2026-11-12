@@ -12,13 +12,27 @@ import {
   type ToolServices,
 } from "./definitions.js";
 
-/** One isolated, ephemeral browser per run. */
+// The live stream gets every painted frame; the app event stream only a throttled copy for clients that can't stream.
+const previewEventInterval = 1000;
+
+type BrowserToolFactory = (context: ToolContext, services: ToolServices, definition: DefineTool) => ToolDefinition[];
+const browserSessions = new WeakMap<ToolServices["events"], Map<string, BrowserToolFactory>>();
+
+/** An isolated browser that stays open until explicitly closed. */
 export function createBrowserTools(
   context: ToolContext,
   services: ToolServices,
   definition: DefineTool,
 ): ToolDefinition[] {
-  const { workspace, run, signal } = context;
+  let sessions = browserSessions.get(services.events);
+  if (!sessions) {
+    sessions = new Map();
+    browserSessions.set(services.events, sessions);
+  }
+  const sessionKey = JSON.stringify([context.workspace.id, context.run.chatId]);
+  const existing = sessions.get(sessionKey);
+  if (existing) return existing(context, services, definition);
+  let { workspace, run, signal } = context;
   let browser: Browser | undefined;
   let page: Page | undefined;
   let opening: Promise<Page> | undefined;
@@ -29,27 +43,47 @@ export function createBrowserTools(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const publish = (data: unknown) =>
       services.events.publish("browser-preview", { chatId: run.chatId, ...data as object }, workspace.id, run.id);
+    let latest: Buffer | undefined;
+    let lastUrl = "";
+    let lastPublished = 0;
+    const publishLatest = () => {
+      timer = undefined;
+      if (stopped || !latest) return;
+      lastPublished = Date.now();
+      lastUrl = current.url();
+      if (latest.length <= 512 * 1024)
+        publish({ active: true, url: lastUrl, image: latest.toString("base64") });
+    };
     const stop = () => {
       if (stopped) return;
       stopped = true;
       clearTimeout(timer);
-      signal.removeEventListener("abort", stop);
+      void current.screencast.stop().catch(() => {});
       publish({ active: false });
+      services.events.frameEnd(run.chatId);
     };
     stopPreview = stop;
-    signal.addEventListener("abort", stop, { once: true });
     current.once("close", stop);
-    const capture = async () => {
-      try {
-        const image = await current.screenshot({
-          type: "jpeg", quality: 55, scale: "css", timeout: 2000,
-        });
-        if (!stopped && image.length <= 512 * 1024)
-          publish({ active: true, url: current.url(), image: image.toString("base64") });
-      } catch { /* Navigation can temporarily interrupt capture. */ }
-      if (!stopped) timer = setTimeout(() => void capture(), 100);
-    };
-    void capture();
+    // The engine pushes a frame whenever it paints, so motion is live and an idle page sends nothing.
+    const viewport = current.viewportSize() ?? { width: 1280, height: 720 };
+    current.screencast
+      .start({
+        size: viewport,
+        quality: 70,
+        onFrame: ({ data }) => {
+          if (stopped) return;
+          latest = data;
+          services.events.frame(run.chatId, data);
+          // A URL change goes out at once so the card's address stays current; otherwise a trailing throttle.
+          if (current.url() !== lastUrl || Date.now() - lastPublished >= previewEventInterval) {
+            clearTimeout(timer);
+            publishLatest();
+          } else timer ??= setTimeout(publishLatest, previewEventInterval - (Date.now() - lastPublished));
+        },
+      })
+      .catch(() => {
+        // Without a screencast the preview simply stays empty; the browser tools still work.
+      });
   };
   const refs = new Map<string, ElementHandle<HTMLElement | SVGElement>>();
   let snapshot = 0;
@@ -93,7 +127,6 @@ export function createBrowserTools(
       approvedOrigins.set(origin, pending);
     }
     await pending;
-    signal.throwIfAborted();
   };
   const getPage = async (): Promise<Page> => {
     if (page && !page.isClosed()) return page;
@@ -105,13 +138,15 @@ export function createBrowserTools(
         await launched.close();
         signal.throwIfAborted();
       }
-      signal.addEventListener(
-        "abort",
-        () => {
-          void browser?.close().catch(() => {});
-        },
-        { once: true },
-      );
+      await services.events.registerBrowser(run.chatId, async () => {
+        stopPreview?.();
+        await clearRefs();
+        await launched.close();
+        if (browser === launched) {
+          browser = undefined;
+          page = undefined;
+        }
+      });
       const isolated = await launched.newContext({
         acceptDownloads: false,
         serviceWorkers: "block",
@@ -223,7 +258,11 @@ export function createBrowserTools(
       new Promise((done) => setTimeout(done, left())),
     ]);
   };
-  return [
+  const createTools: BrowserToolFactory = (nextContext, nextServices, definition) => {
+    ({ workspace, run, signal } = nextContext);
+    services = nextServices;
+    approvedOrigins.clear();
+    return [
     definition(
       "wait",
       "Pause for a fixed number of milliseconds (max 30 s), e.g. to let animations, late assets or background work finish.",
@@ -343,11 +382,7 @@ export function createBrowserTools(
         await approve("Browser " + action);
         const current = currentPage();
         if (action === "close") {
-          stopPreview?.();
-          await clearRefs();
-          await browser?.close();
-          browser = undefined;
-          page = undefined;
+          await services.events.closeBrowser(run.chatId);
           logs.length = 0;
           return { closed: true };
         }
@@ -526,5 +561,8 @@ export function createBrowserTools(
         };
       },
     ),
-  ];
+    ];
+  };
+  sessions.set(sessionKey, createTools);
+  return createTools(context, services, definition);
 }

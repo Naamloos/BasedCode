@@ -315,6 +315,10 @@ events.on("event", (event: AppEvent) => {
   recentEvents.push({ seq: ++eventSeq, event });
   if (recentEvents.length > 500) recentEvents.shift();
 });
+// The newest live browser frame per chat, so a viewer that connects mid-session starts with a picture.
+const browserFrames = new Map<string, Buffer>();
+events.on("frame", (chatId: string, image: Buffer) => browserFrames.set(chatId, image));
+events.on("frame-end", (chatId: string) => browserFrames.delete(chatId));
 let maintenance = false;
 let ownOrigin = "";
 
@@ -1078,7 +1082,7 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         target.id,
         handOffPrompt(from, to, input.context || undefined),
         [],
-        { modeSwitch: { from, to } },
+        { modeSwitch: { from, to, context: input.context || undefined } },
       );
       events.publish("state");
       return target;
@@ -1538,6 +1542,11 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       processes.resize(terminalId, cols, rows);
       return null;
     }
+    case "browser.close": {
+      const { chatId } = z.object({ chatId: id }).parse(params);
+      await events.closeBrowser(chatId);
+      return null;
+    }
     case "terminal.stop":
       processes.stop(z.object({ terminalId: id }).parse(params).terminalId, true);
       return null;
@@ -1827,7 +1836,7 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
 function authorize(request: IncomingMessage, url: URL): void {
   const supplied =
     request.headers.authorization?.replace(/^Bearer /, "") ??
-    (["/events", "/poll", "/media", "/attachment"].includes(url.pathname)
+    (["/events", "/poll", "/media", "/attachment", "/browser-stream"].includes(url.pathname)
       ? url.searchParams.get("token")
       : null);
   const local =
@@ -1953,7 +1962,7 @@ async function handle(
       return;
     }
     if (
-      ["/rpc", "/events", "/poll", "/media", "/attachment"].includes(
+      ["/rpc", "/events", "/poll", "/media", "/attachment", "/browser-stream"].includes(
         url.pathname,
       )
     ) {
@@ -2109,6 +2118,46 @@ async function handle(
         }, 25_000);
         events.on("event", wake);
         request.on("close", done);
+        return;
+      }
+      if (url.pathname === "/browser-stream" && request.method === "GET") {
+        // The agent browser as an MJPEG stream: the window's <img> decodes and paints each part as it lands.
+        const chatId = z.string().min(1).parse(url.searchParams.get("chatId"));
+        response.writeHead(200, {
+          "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+          "Cache-Control": "no-store, no-transform",
+          "X-Accel-Buffering": "no",
+          Connection: "keep-alive",
+        });
+        response.write("--frame\r\n");
+        let sent: Buffer | undefined;
+        // A slow viewer skips frames rather than queueing them; after a drain it catches up to the newest one.
+        const send = (image: Buffer) => {
+          if (response.writableNeedDrain || image === sent) return;
+          sent = image;
+          // The next boundary goes out with the frame, so the browser paints it now instead of on the next frame.
+          response.write(`Content-Type: image/jpeg\r\nContent-Length: ${image.length}\r\n\r\n`);
+          response.write(image);
+          response.write("\r\n--frame\r\n");
+        };
+        const onFrame = (id: string, image: Buffer) => {
+          if (id === chatId) send(image);
+        };
+        const onDrain = () => {
+          const image = browserFrames.get(chatId);
+          if (image) send(image);
+        };
+        const onEnd = (id: string) => {
+          if (id === chatId) response.end();
+        };
+        events.on("frame", onFrame);
+        events.on("frame-end", onEnd);
+        response.on("drain", onDrain);
+        onDrain();
+        response.on("close", () => {
+          events.off("frame", onFrame);
+          events.off("frame-end", onEnd);
+        });
         return;
       }
       if (url.pathname === "/events" && request.method === "GET") {

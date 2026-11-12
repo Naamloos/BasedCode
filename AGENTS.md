@@ -4,6 +4,10 @@ Instructions for AI coding agents working on BasedCode. Read this before changin
 
 BasedCode is a desktop app (NW.js window, Vue 3 UI, local Node backend) that runs AI coding agents against a user's project folder through its own tools, approvals and checkpoints. See [README.md](README.md) for what it does.
 
+## Changes in BasedCode from an active basedcode session
+
+When the user makes changes to BasedCode from within another BasedCode session, always remind the user that a restart of the app may be required to see the new changes in full effect, if the user is running the app in development mode.
+
 ## Layout
 
 All app code lives in `src/`, split by where it runs:
