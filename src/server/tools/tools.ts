@@ -14,6 +14,7 @@ import {
 import { createFileNotifier } from './fileChanges.js';
 import { createFileTools } from './fileTools.js';
 import { createBrowserTools } from './browserTools.js';
+import { createComputerTools } from './computerTools.js';
 import { createGitTools } from './gitTools.js';
 import { createIntegrationTools } from './integrationTools.js';
 import { createLanguageTools } from './languageTools.js';
@@ -182,6 +183,8 @@ ${cutNote(value.length)}`;
       ...createChatTools(context, services, definition),
       ...fileTools,
       ...createBrowserTools(context, services, definition),
+      // The desktop helper drives user32 through Windows PowerShell; other platforms get no computer tools yet.
+      ...(process.platform === 'win32' ? createComputerTools(context, services, definition) : []),
       ...createTerminalTools(context, services, definition),
       ...createGitTools(context, services, definition),
       ...createLanguageTools(context, services, definition, changed),

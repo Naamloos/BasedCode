@@ -20,6 +20,18 @@ export const toolGroups: Record<string, { about: string; tools: string[] }> = {
       'browser_control',
     ],
   },
+  computer: {
+    about: 'see and control the Windows desktop: screenshot, mouse, keyboard; for native apps the browser tools cannot reach',
+    tools: [
+      'computer_screenshot',
+      'computer_click',
+      'computer_move',
+      'computer_drag',
+      'computer_scroll',
+      'computer_type',
+      'computer_key',
+    ],
+  },
   visuals: {
     about: 'show the user an interactive HTML preview, chart, Mermaid diagram or image in the chat',
     tools: ['render_ui', 'render_chart', 'render_diagram', 'show_image'],

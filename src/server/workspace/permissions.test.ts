@@ -41,7 +41,7 @@ test('allow-all approves agent operations but never skips fallback consent', asy
 test('no-commands refuses commands, deletes, installs and MCP tools', async () => {
   const { permissions, run, cleanup } = await setup('no-commands');
   try {
-    for (const title of ['Run terminal command', 'Run verification checks', 'Delete file', 'Install foo', 'MCP tool: x', 'Browser automation']) {
+    for (const title of ['Run terminal command', 'Run verification checks', 'Delete file', 'Install foo', 'MCP tool: x', 'Browser automation', 'Computer control', 'Computer screenshot']) {
       await assert.rejects(permissions.ask('w', title, '', undefined, run), /Refused/);
     }
   } finally { await cleanup(); }

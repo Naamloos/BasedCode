@@ -17,6 +17,9 @@ function category(
     return 'command';
   if (title === 'Delete file' || title === 'Delete directory') return 'destructive';
   if (title === 'Git branch' || title === 'Git stash') return 'command';
+  // Desktop input can open a shell and type into it, so it counts as running commands.
+  if (title === 'Computer control') return 'command';
+  if (title === 'Computer screenshot') return 'external';
   if (title.startsWith('Install ')) return 'install';
   if (title.startsWith('MCP tool:') || title === 'Fetch web page' || (title === 'Browser automation' || title === 'Browser network origin'))
     return 'external';
