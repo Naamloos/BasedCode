@@ -14,7 +14,8 @@ import type { LanguageConfig, LanguageServerStatus, Workspace } from '../../../s
 import { rpc } from '../../services/api';
 import { confirmAction } from '../../state/dialogs';
 import { t } from '../../theme/themes';
-import FormDialog from '../common/FormDialog.vue';
+import LanguageServerEditor from './LanguageServerEditor.vue';
+import { languageServerGuides as guides, languageServerExecutable as baseName } from './languageServerGuides';
 
 const servers = defineModel<LanguageConfig[]>({ required: true });
 const props = defineProps<{
@@ -24,177 +25,6 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ saved: [] }>();
 
-const npmDetail =
-  'Requires Node.js and npm. Use the Set up button to install it into BasedCode storage, or install it yourself with this command.';
-/** Known servers: install hints for missing ones and presets for the add dialog. */
-const guides = [
-  {
-    name: 'C# / Roslyn',
-    languages: ['csharp'],
-    install: 'dotnet tool install --global roslyn-language-server --prerelease',
-    command: 'roslyn-language-server',
-    args: ['--stdio', '--autoLoadProjects'],
-    detail:
-      'Requires the .NET 10 runtime or later and the SDK needed by your project. Automatic project loading opens your solution or discovers .csproj files. Global .NET tools are also detected outside PATH.',
-    docs: 'https://github.com/dotnet/roslyn/blob/main/src/LanguageServer/roslyn-language-server/README.md',
-  },
-  {
-    name: 'TypeScript / JavaScript',
-    languages: ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'],
-    install: 'npm install -g typescript-language-server typescript',
-    command: 'typescript-language-server',
-    args: ['--stdio'],
-    detail:
-      'Requires Node.js and npm. Both the server and TypeScript must be installed. Workspace packages are discovered automatically; keep tsconfig.json or jsconfig.json in your project.',
-    docs: 'https://github.com/typescript-language-server/typescript-language-server',
-  },
-  {
-    name: 'Python',
-    languages: ['python'],
-    install: 'npm install -g pyright',
-    command: 'pyright-langserver',
-    args: ['--stdio'],
-    detail:
-      'Requires Node.js and npm for this server. Configure your Python environment in pyrightconfig.json or pyproject.toml when automatic environment detection is insufficient.',
-    docs: 'https://github.com/microsoft/pyright',
-  },
-  {
-    name: 'Vue',
-    languages: ['vue'],
-    install: '',
-    command: 'vue-language-server',
-    args: ['--stdio'],
-    detail:
-      'BasedCode setup installs @vue/language-server 2.2.12 with TypeScript 5 and supplies the TypeScript SDK path. Vue server 3.x needs a separate TypeScript plugin bridge and is not supported by this standalone client.',
-    docs: 'https://github.com/vuejs/language-tools',
-  },
-  {
-    name: 'JSON / JSONC',
-    languages: ['json', 'jsonc'],
-    install: 'npm install -g vscode-langservers-extracted',
-    command: 'vscode-json-language-server',
-    args: ['--stdio'],
-    detail:
-      'Requires Node.js and npm. The package provides several servers; use the JSON executable shown here.',
-    docs: 'https://github.com/hrsh7th/vscode-langservers-extracted',
-  },
-  {
-    name: 'HTML',
-    languages: ['html'],
-    install: 'npm install -g vscode-langservers-extracted',
-    command: 'vscode-html-language-server',
-    args: ['--stdio'],
-    detail: npmDetail,
-    docs: 'https://github.com/hrsh7th/vscode-langservers-extracted',
-  },
-  {
-    name: 'CSS / SCSS / Less',
-    languages: ['css', 'scss', 'less'],
-    install: 'npm install -g vscode-langservers-extracted',
-    command: 'vscode-css-language-server',
-    args: ['--stdio'],
-    detail: npmDetail,
-    docs: 'https://github.com/hrsh7th/vscode-langservers-extracted',
-  },
-  {
-    name: 'YAML',
-    languages: ['yaml'],
-    install: 'npm install -g yaml-language-server',
-    command: 'yaml-language-server',
-    args: ['--stdio'],
-    detail: npmDetail,
-    docs: 'https://github.com/redhat-developer/yaml-language-server',
-  },
-  {
-    name: 'Bash',
-    languages: ['shellscript'],
-    install: 'npm install -g bash-language-server',
-    command: 'bash-language-server',
-    args: ['start'],
-    detail: npmDetail,
-    docs: 'https://github.com/bash-lsp/bash-language-server',
-  },
-  {
-    name: 'Dockerfile',
-    languages: ['dockerfile'],
-    install: 'npm install -g dockerfile-language-server-nodejs',
-    command: 'docker-langserver',
-    args: ['--stdio'],
-    detail: npmDetail,
-    docs: 'https://github.com/rcjsuen/dockerfile-language-server',
-  },
-  {
-    name: 'Go',
-    languages: ['go'],
-    install: 'go install golang.org/x/tools/gopls@latest',
-    command: 'gopls',
-    args: [],
-    detail:
-      'Requires the Go toolchain. This command installs gopls into your Go bin folder, which BasedCode also checks outside PATH.',
-    docs: 'https://go.dev/gopls/',
-  },
-  {
-    name: 'Rust',
-    languages: ['rust'],
-    install: 'rustup component add rust-analyzer',
-    command: 'rust-analyzer',
-    args: [],
-    detail:
-      'Requires rustup. This command installs rust-analyzer for the active toolchain; BasedCode also checks the Cargo bin folder outside PATH.',
-    docs: 'https://rust-analyzer.github.io/',
-  },
-  {
-    name: 'C / C++',
-    languages: ['c', 'cpp'],
-    install: '',
-    command: 'clangd',
-    args: [],
-    detail:
-      'Install clangd with LLVM or your package manager and put it on PATH. It reads compile_commands.json or compile_flags.txt to understand your build.',
-    docs: 'https://clangd.llvm.org/installation',
-  },
-  {
-    name: 'Java',
-    languages: ['java'],
-    install: '',
-    command: 'jdtls',
-    args: [],
-    detail:
-      'Requires a recent JDK. Install the Eclipse JDT language server and put its jdtls launcher on PATH.',
-    docs: 'https://github.com/eclipse-jdtls/eclipse.jdt.ls',
-  },
-  {
-    name: 'Ruby',
-    languages: ['ruby'],
-    install: 'gem install ruby-lsp',
-    command: 'ruby-lsp',
-    args: [],
-    detail:
-      'Requires Ruby. This command installs the ruby-lsp executable; make sure your gem bin folder is on PATH.',
-    docs: 'https://shopify.github.io/ruby-lsp/',
-  },
-  {
-    name: 'PHP',
-    languages: ['php'],
-    install: 'npm install -g intelephense',
-    command: 'intelephense',
-    args: ['--stdio'],
-    detail: 'Requires Node.js and npm. Install it yourself with this command; BasedCode then finds it on PATH.',
-    docs: 'https://intelephense.com/',
-  },
-  {
-    name: 'Lua',
-    languages: ['lua'],
-    install: '',
-    command: 'lua-language-server',
-    args: [],
-    detail: 'Install lua-language-server from its releases page or your package manager and put it on PATH.',
-    docs: 'https://luals.github.io/',
-  },
-];
-// Custom installs often use a full path; match on the executable's base name.
-const baseName = (command: string) =>
-  command.split(/[\\/]/).pop()!.replace(/\.(exe|cmd|bat)$/i, '');
 const guideFor = (config: LanguageConfig) =>
   guides.find((guide) => guide.command === baseName(config.command));
 
@@ -301,83 +131,7 @@ async function remove(config: LanguageConfig) {
   return true;
 }
 
-// Add/edit dialog over a text form: languages comma-separated, one argument per line.
-interface Draft {
-  originalId?: string;
-  name: string;
-  languages: string;
-  command: string;
-  args: string;
-}
-const draft = ref<Draft>();
-const saving = ref(false);
-const dialogError = ref('');
-const slug = (name: string) =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'server';
-const parsedDraft = computed<LanguageConfig | undefined>(() => {
-  const value = draft.value;
-  if (!value) return undefined;
-  const languages = value.languages.split(/[\s,]+/).filter(Boolean);
-  if (!value.name.trim() || !value.command.trim() || !languages.length) return undefined;
-  let id = value.originalId ?? slug(value.name);
-  for (let n = 2; !value.originalId && servers.value.some((server) => server.id === id); n++) id = `${slug(value.name)}-${n}`;
-  return {
-    id,
-    name: value.name.trim(),
-    languages,
-    command: value.command.trim(),
-    args: value.args.split(/\r?\n/).map((arg) => arg.trim()).filter(Boolean),
-  };
-});
-const presets = computed(() =>
-  guides.filter((guide) => !servers.value.some((server) => baseName(server.command) === guide.command)),
-);
-function openAdd() {
-  dialogError.value = '';
-  draft.value = { name: '', languages: '', command: '', args: '--stdio' };
-}
-function usePreset(guide: (typeof guides)[number]) {
-  draft.value = { name: guide.name, languages: guide.languages.join(', '), command: guide.command, args: guide.args.join('\n') };
-}
-function openEdit(config: LanguageConfig) {
-  dialogError.value = '';
-  draft.value = {
-    originalId: config.id,
-    name: config.name,
-    languages: config.languages.join(', '),
-    command: config.command,
-    args: config.args.join('\n'),
-  };
-}
-async function closeDialog() {
-  if (!saving.value) draft.value = undefined;
-}
-async function apply() {
-  const config = parsedDraft.value;
-  if (!config || saving.value) return;
-  saving.value = true;
-  dialogError.value = '';
-  const previous = servers.value.slice();
-  servers.value = draft.value?.originalId
-    ? servers.value.map((server) => (server.id === config.id ? config : server))
-    : [...servers.value, config];
-  try {
-    const message = await props.persist();
-    if (message) {
-      servers.value = previous;
-      dialogError.value = message;
-      return;
-    }
-    draft.value = undefined;
-    await discover();
-  } finally {
-    saving.value = false;
-  }
-}
-async function removeDraft() {
-  const config = servers.value.find((server) => server.id === draft.value?.originalId);
-  if (config && (await remove(config))) draft.value = undefined;
-}
+const editor = ref<InstanceType<typeof LanguageServerEditor>>();
 
 // Advanced: the raw list as JSON, applied explicitly so a half-typed edit never breaks the form.
 const json = ref('');
@@ -454,7 +208,7 @@ async function applyJson() {
     <button
       type="button"
       class="primary-button"
-      @click="openAdd"
+      @click="editor?.openAdd()"
     >
       <Plus :size="14" /> {{ t('Add server') }}
     </button>
@@ -532,7 +286,7 @@ async function applyJson() {
             class="icon-button"
             :title="t('Edit server')"
             :aria-label="t('Edit server')"
-            @click="openEdit(row.config)"
+            @click="editor?.openEdit(row.config)"
           >
             <Pencil :size="14" />
           </button>
@@ -653,100 +407,13 @@ async function applyJson() {
     </div>
   </details>
 
-  <FormDialog
-    v-if="draft"
-    :title="draft.originalId ? t('Edit {name}', { name: draft.name || t('server') }) : t('Add language server')"
-    @close="closeDialog"
-    @submit="apply"
-  >
-    <div
-      v-if="!draft.originalId && presets.length"
-      class="lsp-presets"
-    >
-      <span class="muted small">{{ t('Start from a preset') }}</span>
-      <button
-        v-for="guide in presets"
-        :key="guide.command"
-        type="button"
-        class="secondary-button"
-        @click="usePreset(guide)"
-      >
-        {{ guide.name }}
-      </button>
-    </div>
-    <label>{{ t('Name') }}
-      <input
-        v-model="draft.name"
-        maxlength="80"
-        autocomplete="off"
-        required
-        autofocus
-      >
-    </label>
-    <label>{{ t('Language IDs') }}
-      <input
-        v-model="draft.languages"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="typescript, javascript"
-        required
-      >
-      <small class="muted">{{ t('Comma-separated LSP language IDs this server handles.') }}</small>
-    </label>
-    <label>{{ t('Command') }}
-      <input
-        v-model="draft.command"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="typescript-language-server"
-        required
-      >
-      <small class="muted">{{ t('An executable on PATH, or its full path for a custom install.') }}</small>
-    </label>
-    <label>{{ t('Arguments') }}
-      <textarea
-        v-model="draft.args"
-        class="code-input"
-        rows="3"
-        spellcheck="false"
-        placeholder="--stdio"
-      />
-      <small class="muted">{{ t('One argument per line.') }}</small>
-    </label>
-    <p
-      v-if="dialogError"
-      class="error-box"
-      role="alert"
-    >
-      {{ dialogError }}
-    </p>
-    <template #footer>
-      <button
-        v-if="draft.originalId"
-        type="button"
-        class="secondary-button danger-action"
-        :disabled="saving"
-        @click="removeDraft"
-      >
-        <Trash2 :size="14" /> {{ t('Remove') }}
-      </button>
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="saving"
-        @click="closeDialog"
-      >
-        {{ t('Cancel') }}
-      </button>
-      <button
-        type="submit"
-        class="primary-button"
-        :disabled="saving || !parsedDraft"
-      >
-        {{ saving ? t('Saving…') : draft.originalId ? t('Save changes') : t('Add server') }}
-      </button>
-    </template>
-  </FormDialog>
+  <LanguageServerEditor
+    ref="editor"
+    v-model="servers"
+    :persist="persist"
+    :refresh="discover"
+    :remove="remove"
+  />
 </template>
 
 <style scoped>
@@ -894,11 +561,5 @@ async function applyJson() {
   width: 100%;
   box-sizing: border-box;
   margin-top: 10px;
-}
-.lsp-presets {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
 }
 </style>

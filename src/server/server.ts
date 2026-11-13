@@ -1,4 +1,3 @@
-import spawn from "cross-spawn";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream, existsSync } from "node:fs";
@@ -8,9 +7,7 @@ import {
   readdir,
   realpath,
   rm,
-  rmdir,
   stat,
-  unlink,
   writeFile,
 } from "node:fs/promises";
 import {
@@ -19,14 +16,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { homedir } from "node:os";
-import {
-  basename,
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  resolve,
-} from "node:path";
+import { extname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import { previewMediaType } from "../shared/preview.js";
@@ -39,23 +29,20 @@ import {
   type GlobalSettings,
   type ProviderCatalog,
   type Run,
-  type WorkspaceSettings,
 } from "../shared/types.js";
 import { Agent, isTextAttachment } from "./agent/agent.js";
 import { expandSlashCommand, skillCommands } from "./agent/commands.js";
 import {
   changeGlobalSkill,
+  changeWorkspaceSkill,
   listAllSkills,
   maxSkillLength,
   skillDescription,
   skillNamePattern,
   skillSources,
-  workspaceSkillPath,
 } from "./agent/skills.js";
-import { guidedMode, guidedModeIds } from "../shared/chatModes.js";
-import { handOffPrompt } from "./agent/prompts.js";
+import { guidedModeIds } from "../shared/chatModes.js";
 import { googleFontsCsp } from "./tools/designPickers.js";
-import { replaceFile } from "./workspace/atomicWrite.js";
 import { Languages } from "./integrations/languages.js";
 import { McpConnections } from "./integrations/mcp.js";
 import {
@@ -71,6 +58,10 @@ import {
 } from "./integrations/mcpRegistry.js";
 import { RemoteAccess } from "./integrations/remote.js";
 import { antigravityOptions, cliPath, loginStatus } from "./providers/cli.js";
+import {
+  loginCommand,
+  type AntigravityLoginFolders,
+} from "./providers/login.js";
 import { CodexHome } from "./providers/codexHome.js";
 import { Credentials } from "./providers/credentials.js";
 import { Limits } from "./providers/limits.js";
@@ -95,15 +86,21 @@ import { queryDocument } from "./tools/queryUi.js";
 import { libraryFile } from "./tools/widgetLibraries.js";
 import { CodingTools } from "./tools/tools.js";
 import { Checkpoints } from "./workspace/checkpoints.js";
-import { splitGitDiff } from "./workspace/diff.js";
+import {
+  attachmentLimit,
+  browseFolder,
+  openInEditor,
+  readAttachment,
+  workspaceChanges,
+} from "./server/files.js";
+import { Chats } from "./server/chats.js";
+import { Workspaces } from "./server/workspaces.js";
 import { Permissions } from "./workspace/permissions.js";
 import {
   fileTree,
-  gitRead,
   isInside,
   readText,
   safePath,
-  workspacePath,
 } from "./workspace/workspace.js";
 
 const dataRoot = resolve(
@@ -322,7 +319,6 @@ events.on("frame-end", (chatId: string) => browserFrames.delete(chatId));
 let maintenance = false;
 let ownOrigin = "";
 
-const attachmentLimit = 20 * 1024 * 1024;
 
 function state(): AppState & { recoveryRequired: boolean } {
   const chats = store.all("chat");
@@ -414,6 +410,25 @@ const features = new Features({
 });
 features.attachNotifications();
 
+const chats = new Chats({
+  store,
+  events,
+  agent,
+  scratchDirectory,
+  inMaintenance: () => maintenance,
+  removeUnusedScratch,
+});
+
+const workspaces = new Workspaces({
+  store,
+  events,
+  agent,
+  mcp,
+  languages,
+  dataDirectory,
+  assertIdle,
+});
+
 /**
  * Methods that change a chat, its history or its files. A wrapped-up chat is locked, so these are
  * refused for it. Reading, second opinions, stopping the wrap-up run, and archive/pin/move/delete still work.
@@ -456,38 +471,6 @@ function assertChatUnlocked(method: string, params: unknown) {
   if (lockedChatMethods.has(method) && requestChat(params)?.wrappedUpAt)
     throw new Error("This session was wrapped up and is locked.");
 }
-
-/** Copies finished turns and their messages into another chat, for forks and hand-offs. */
-function copyTurns(fromChatId: string, toChatId: string, turns: Run[]): void {
-  const runIds = new Map<string, string>();
-  for (const run of turns) {
-    const copy = store.put("run", {
-      ...run,
-      id: randomUUID(),
-      chatId: toChatId,
-      forkedFrom: run.forkedFrom ?? run.id,
-    });
-    runIds.set(run.id, copy.id);
-  }
-  for (const message of store.all("message")) {
-    const newRun = runIds.get(message.runId);
-    if (message.chatId !== fromChatId || !newRun || message.metadata.reverted)
-      continue;
-    store.put("message", {
-      ...message,
-      id: randomUUID(),
-      chatId: toChatId,
-      runId: newRun,
-    });
-  }
-}
-
-const unfinishedRunStatuses = [
-  "queued",
-  "running",
-  "paused",
-  "awaiting_approval",
-];
 
 async function rpc(method: string, params: unknown): Promise<unknown> {
   assertChatUnlocked(method, params);
@@ -559,178 +542,46 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
           directoriesOnly: z.boolean().default(false),
         })
         .parse(params);
-      if (!isAbsolute(path)) throw new Error("Enter an absolute folder path.");
-      const directory = await realpath(path);
-      const entries = (await readdir(directory, { withFileTypes: true }))
-        .filter(
-          (entry) =>
-            !entry.isSymbolicLink() &&
-            (entry.isDirectory() || (!directoriesOnly && entry.isFile())),
-        )
-        .sort(
-          (a, b) =>
-            Number(b.isDirectory()) - Number(a.isDirectory()) ||
-            a.name.localeCompare(b.name),
-        );
-      return {
-        path: directory,
-        parent: dirname(directory),
-        truncated: entries.length > 1000,
-        entries: entries.slice(0, 1000).map((entry) => ({
-          name: entry.name,
-          path: join(directory, entry.name),
-          directory: entry.isDirectory(),
-        })),
-      };
+      return browseFolder(path, directoriesOnly);
     }
     case "filesystem.readAttachment": {
       const { path } = z.object({ path: z.string().min(1) }).parse(params);
-      if (!isAbsolute(path)) throw new Error("Select an absolute file path.");
-      const file = await realpath(path);
-      const info = await stat(file);
-      if (!info.isFile()) throw new Error("Select a regular file.");
-      if (info.size > attachmentLimit)
-        throw new Error("Attachments are limited to 20 MiB each.");
-      const data = await readFile(file);
-      if (data.length > attachmentLimit)
-        throw new Error("Attachments are limited to 20 MiB each.");
-      return {
-        name: basename(file),
-        mediaType:
-          previewMediaType(file) ??
-          (isTextAttachment({ name: file, mediaType: "" })
-            ? "text/plain"
-            : "application/octet-stream"),
-        data: data.toString("base64"),
-      };
+      return readAttachment(path);
     }
     case "workspace.open": {
       const { path } = z.object({ path: z.string().min(1) }).parse(params);
-      // Plain-chat folders live in app data, which ordinary workspaces may not overlap.
-      const scratch = store
-        .all("workspace")
-        .find((workspace) => workspace.scratch && workspace.path === path);
-      const canonical =
-        scratch?.path ?? (await workspacePath(path, dataDirectory));
-      const existing = store
-        .all("workspace")
-        .find((workspace) => workspace.path === canonical);
-      if (existing) {
-        const opened = store.put("workspace", {
-          ...existing,
-          removedAt: undefined,
-          lastOpenedAt: new Date().toISOString(),
-        });
-        events.publish("state");
-        return opened;
-      }
-      const workspace = store.put("workspace", {
-        id: randomUUID(),
-        lastOpenedAt: new Date().toISOString(),
-        path: canonical,
-        name: canonical.split(/[\\/]/).pop() ?? canonical,
-        settings: store.newWorkspaceSettings(),
-      });
-      events.publish("workspace-opened", workspace);
-      events.publish("state");
-      return workspace;
+      return workspaces.open(path);
     }
     case "workspace.rename": {
       const { workspaceId, name } = z
         .object({ workspaceId: id, name: z.string().trim().min(1).max(80) })
         .parse(params);
-      const workspace = store.get("workspace", workspaceId);
-      if (workspace.scratch)
-        throw new Error("Plain chats cannot be renamed as a workspace.");
-      store.put("workspace", { ...workspace, name });
-      events.publish("state");
+      workspaces.rename(workspaceId, name);
       return null;
     }
     case "workspace.chats.archive":
     case "workspace.chats.delete": {
       const { workspaceId } = z.object({ workspaceId: id }).parse(params);
-      const workspace = store.get("workspace", workspaceId);
-      if (workspace.scratch || workspace.removedAt)
-        throw new Error("Select an existing workspace.");
-      const owned = store.all("chat").filter(
-        (chat) => chat.workspaceId === workspaceId && !chat.deletedAt,
-      );
-      const deleting = method === "workspace.chats.delete";
-      if (deleting) {
-        const ownedIds = new Set(owned.map((chat) => chat.id));
-        if (owned.some((chat) => agent.chatBusy(chat.id)) ||
-          store.all("run").some((run) => ownedIds.has(run.chatId) && run.status === "queued"))
-          throw new Error("Stop active and queued prompts before deleting workspace chats.");
-      }
-      const now = new Date().toISOString();
-      store.transaction(() => {
-        for (const chat of owned)
-          store.put("chat", deleting
-            ? { ...chat, deletedAt: now }
-            : { ...chat, archivedAt: chat.archivedAt || now });
-      });
-      events.publish("state");
+      workspaces.clearChats(workspaceId, method === "workspace.chats.delete");
       return null;
     }
     case "workspace.remove": {
-      // Removes the workspace and its chats from BasedCode. The folder on disk is never touched.
       const { workspaceId } = z.object({ workspaceId: id }).parse(params);
-      const workspace = store.get("workspace", workspaceId);
-      if (workspace.scratch)
-        throw new Error("Plain chats are not a removable workspace.");
-      assertIdle(workspaceId);
-      const owned = store
-        .all("chat")
-        .filter((chat) => chat.workspaceId === workspaceId);
-      const ownedIds = new Set(owned.map((chat) => chat.id));
-      if (
-        store
-          .all("run")
-          .some((run) => ownedIds.has(run.chatId) && run.status === "queued")
-      )
-        throw new Error(
-          "Stop queued prompts in this workspace before removing it.",
-        );
-      await mcp.closeWorkspace(workspaceId);
-      languages.closeWorkspace(workspaceId);
-      const now = new Date().toISOString();
-      for (const chat of owned)
-        if (!chat.deletedAt) store.put("chat", { ...chat, deletedAt: now });
-      store.put("workspace", { ...workspace, removedAt: now });
-      events.publish("state");
+      await workspaces.remove(workspaceId);
       return null;
     }
     case "workspace.settings": {
       const { workspaceId, settings } = z
         .object({ workspaceId: id, settings: settingsSchema })
         .parse(params);
-      assertIdle(workspaceId);
-      await mcp.closeWorkspace(workspaceId);
-      languages.closeWorkspace(workspaceId);
-      const current = store.get("workspace", workspaceId);
-      store.put("workspace", {
-        ...current,
-        settings: {
-          ...settings,
-          mcpServers: settings.mcpServers ?? current.settings.mcpServers ?? [],
-        } as WorkspaceSettings,
-      });
-      events.publish("state");
+      await workspaces.updateSettings(workspaceId, settings);
       return null;
     }
     case "workspace.mcpSettings": {
       const { workspaceId, servers } = z
         .object({ workspaceId: id, servers: z.array(serverConfig).max(30) })
         .parse(params);
-      assertIdle(workspaceId);
-      const workspace = store.get("workspace", workspaceId);
-      await mcp.closeWorkspace(workspaceId);
-      store.put("workspace", {
-        ...workspace,
-        settings: { ...workspace.settings, mcpServers: servers },
-      });
-      await mcp.forgetRemoved();
-      events.publish("state");
+      await workspaces.updateMcpServers(workspaceId, servers);
       return null;
     }
     case "global.settings": {
@@ -863,33 +714,22 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       const workspace = store.get("workspace", workspaceId);
       const global = store.global();
       const executable = cliPath(provider, global[`${provider}Path`] ?? "");
-      const quote = (value: string) =>
-        "'" +
-        value.replaceAll(
-          "'",
-          process.platform === "win32" ? "''" : "'\\''",
-        ) +
-        "'";
-      const quoted = quote(executable);
-      const launcher = /\.[cm]?js$/i.test(executable)
-        ? "node " + quoted
-        : quoted;
-      let command =
-        (process.platform === "win32" ? "& " : "") +
-        launcher +
-        (provider === "codex"
-          ? " login"
-          : provider === "antigravity" ? "" : " auth login");
+      let antigravityFolders: AntigravityLoginFolders | undefined;
       if (provider === "antigravity") {
         const { runtimeDir } = antigravityOptions(global.antigravityPath);
-        const home = join(runtimeDir, "home");
-        const cwd = join(runtimeDir, "workspace");
-        await mkdir(home, { recursive: true });
-        await mkdir(cwd, { recursive: true });
-        command = process.platform === "win32"
-          ? `$env:HOME = ${quote(home)}; $env:USERPROFILE = ${quote(home)}; Set-Location -LiteralPath ${quote(cwd)}; ${command}`
-          : `cd ${quote(cwd)} && HOME=${quote(home)} USERPROFILE=${quote(home)} ${command}`;
+        antigravityFolders = {
+          home: join(runtimeDir, "home"),
+          cwd: join(runtimeDir, "workspace"),
+        };
+        await mkdir(antigravityFolders.home, { recursive: true });
+        await mkdir(antigravityFolders.cwd, { recursive: true });
       }
+      const command = loginCommand(
+        provider,
+        executable,
+        process.platform,
+        antigravityFolders,
+      );
       await permissions.ask(
         workspaceId,
         `Sign in to ${provider}`,
@@ -905,97 +745,33 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
           mode: z.enum(["default", ...guidedModeIds]).optional(),
         })
         .parse(params);
-      const chatId = randomUUID();
-      let workspaceId = input.workspaceId;
-      if (input.scratch) {
-        // A plain chat works in its own folder inside app data, so it never touches a project.
-        const folder = join(scratchDirectory, chatId);
-        await mkdir(folder, { recursive: true, mode: 0o700 });
-        workspaceId = store.put("workspace", {
-          id: randomUUID(),
-          path: await realpath(folder),
-          name: "Chat",
-          scratch: true,
-          lastOpenedAt: new Date().toISOString(),
-          settings: store.newWorkspaceSettings(),
-        }).id;
-      }
-      if (!workspaceId)
-        throw new Error("Choose a workspace or create a plain chat.");
-      const target = store.get("workspace", workspaceId);
-      // An explicit mode wins; otherwise the workspace's default for new chats.
-      const mode = input.mode ?? target.settings.defaultMode ?? "default";
-      const chat = store.put("chat", {
-        id: chatId,
-        workspaceId,
-        title: guidedMode(mode)?.title ?? "New chat",
-        createdAt: new Date().toISOString(),
-        stale: false,
-        mode,
-      });
-      events.publish("state");
-      return chat;
+      return chats.create(input);
     }
     case "chat.wrapUp": {
       const { chatId } = z.object({ chatId: id }).parse(params);
-      if (maintenance) throw new Error("Workspace maintenance is in progress.");
-      const chat = store.get("chat", chatId);
-      const wrapUpPrompt = guidedMode(chat.mode)?.wrapUpPrompt;
-      if (!wrapUpPrompt)
-        throw new Error("Only guided-mode chats can be wrapped up.");
-      if (chat.wrappedUpAt)
-        throw new Error("This session was already wrapped up.");
-      const run = await agent.submit(chatId, wrapUpPrompt, []);
-      store.put("chat", {
-        ...store.get("chat", chatId),
-        wrappedUpAt: new Date().toISOString(),
-      });
-      events.publish("state");
-      return run;
+      return chats.wrapUp(chatId);
     }
     case "chat.archive": {
       const { chatId, archived } = z
         .object({ chatId: id, archived: z.boolean() })
         .parse(params);
-      const chat = store.get("chat", chatId);
-      store.put("chat", {
-        ...chat,
-        archivedAt: archived ? new Date().toISOString() : undefined,
-      });
-      events.publish("state");
+      chats.archive(chatId, archived);
       return null;
     }
     case "chat.pin": {
       const { chatId, pinned } = z
         .object({ chatId: id, pinned: z.boolean() })
         .parse(params);
-      store.put("chat", { ...store.get("chat", chatId), pinned });
-      events.publish("state");
+      chats.pin(chatId, pinned);
       return null;
     }
     case "chat.move": {
       const { chatId, workspaceId } = z
         .object({ chatId: id, workspaceId: id })
         .parse(params);
-      const chat = store.get("chat", chatId);
-      const target = store.get("workspace", workspaceId);
-      if (chat.workspaceId === workspaceId) return chat;
-      if (
-        agent.chatBusy(chatId) ||
-        store
-          .all("run")
-          .some((run) => run.chatId === chatId && run.status === "queued")
-      )
-        throw new Error(
-          "Stop active and queued prompts before moving this chat.",
-        );
-      // Earlier turns keep their own workspace, so reverting them still restores the folder they changed.
-      const moved = store.put("chat", { ...chat, workspaceId: target.id });
-      events.publish("state");
-      return moved;
+      return chats.move(chatId, workspaceId);
     }
     case "chat.fork": {
-      // With `prompt`: edit and resend. The fork stops before that prompt and sends the edited text instead.
       const { chatId, runId, prompt } = z
         .object({
           chatId: id,
@@ -1003,56 +779,9 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
           prompt: z.string().trim().min(1).max(100_000).optional(),
         })
         .parse(params);
-      const source = store.get("chat", chatId);
-      const turns = store
-        .all("run")
-        .filter((run) => run.chatId === chatId && !run.reverted);
-      const until = turns.findIndex((run) => run.id === runId);
-      if (until < 0) throw new Error("That prompt is not part of this chat.");
-      const copied = turns.slice(0, prompt === undefined ? until + 1 : until);
-      if (copied.some((run) => unfinishedRunStatuses.includes(run.status)))
-        throw new Error(
-          "Wait for that prompt to finish before forking from it.",
-        );
-      const fork = store.transaction(() => {
-        const created = store.put("chat", {
-          id: randomUUID(),
-          workspaceId: source.workspaceId,
-          title: `${source.title} (fork)`.slice(0, 150),
-          createdAt: new Date().toISOString(),
-          stale: false,
-          mode: source.mode,
-          forkedFrom: source.id,
-          ...(source.titleSource ? { titleSource: source.titleSource } : {}),
-        });
-        copyTurns(chatId, created.id, copied);
-        return created;
-      });
-      if (prompt !== undefined) {
-        const original = store
-          .all("message")
-          .find(
-            (message) =>
-              message.runId === runId &&
-              message.role === "user" &&
-              !message.metadata.steer,
-          );
-        const attachments =
-          (original?.metadata.attachments as { id: string }[] | undefined) ??
-          [];
-        const workspace = store.get("workspace", fork.workspaceId);
-        agent.submit(
-          fork.id,
-          await expandSlashCommand(prompt, workspace),
-          attachments.map((item) => item.id),
-        );
-      }
-      events.publish("state");
-      return fork;
+      return chats.fork(chatId, runId, prompt);
     }
     case "chat.handOff": {
-      // Switches this chat to another mode in place and continues it with a hand-off prompt.
-      // Works on wrapped-up chats too: switching mode reopens the session.
       const input = z
         .object({
           chatId: id,
@@ -1060,80 +789,25 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
           context: z.string().trim().max(20_000).optional(),
         })
         .parse(params);
-      if (maintenance) throw new Error("Workspace maintenance is in progress.");
-      const source = store.get("chat", input.chatId);
-      const from = guidedMode(source.mode)?.label ?? "a normal chat";
-      const to = guidedMode(input.mode)?.label ?? "a normal chat";
-      if ((source.mode ?? "default") === input.mode)
-        throw new Error(`This chat is already in ${to}.`);
-      const turns = store
-        .all("run")
-        .filter((run) => run.chatId === source.id && !run.reverted);
-      if (turns.some((run) => unfinishedRunStatuses.includes(run.status)))
-        throw new Error(
-          "Wait for the current prompt to finish before switching modes.",
-        );
-      const target = store.put("chat", {
-        ...source,
-        mode: input.mode,
-        wrappedUpAt: undefined,
-      });
-      agent.submit(
-        target.id,
-        handOffPrompt(from, to, input.context || undefined),
-        [],
-        { modeSwitch: { from, to, context: input.context || undefined } },
-      );
-      events.publish("state");
-      return target;
+      return chats.handOff(input.chatId, input.mode, input.context || undefined);
     }
     case "chat.delete": {
       const { chatId } = z.object({ chatId: id }).parse(params);
-      const chat = store.get("chat", chatId);
-      if (
-        agent.chatBusy(chatId) ||
-        store
-          .all("run")
-          .some((run) => run.chatId === chatId && run.status === "queued")
-      )
-        throw new Error(
-          "Stop active and queued prompts before deleting this chat.",
-        );
-      store.put("chat", { ...chat, deletedAt: new Date().toISOString() });
-      await removeUnusedScratch(chat.workspaceId);
-      events.publish("state");
+      await chats.delete(chatId);
       return null;
     }
     case "chat.setMode": {
-      // Switching modes is only for a chat that hasn't started: an existing conversation was shaped by its mode.
       const { chatId, mode } = z
         .object({ chatId: id, mode: z.enum(["default", ...guidedModeIds]) })
         .parse(params);
-      const chat = store.get("chat", chatId);
-      if (
-        store.all("message").some((message) => message.chatId === chatId) ||
-        store.all("run").some((run) => run.chatId === chatId)
-      )
-        throw new Error("The mode can only change before the first prompt.");
-      // Keep a title the user chose; otherwise follow the new mode's default title.
-      const title =
-        chat.titleSource === "user"
-          ? chat.title
-          : (guidedMode(mode)?.title ?? "New chat");
-      store.put("chat", { ...chat, mode, title });
-      events.publish("state");
+      chats.setMode(chatId, mode);
       return null;
     }
     case "chat.rename": {
       const { chatId, title } = z
         .object({ chatId: id, title: z.string().min(1).max(150) })
         .parse(params);
-      store.put("chat", {
-        ...store.get("chat", chatId),
-        title,
-        titleSource: "user",
-      });
-      events.publish("state");
+      chats.rename(chatId, title);
       return null;
     }
     case "skills.list": {
@@ -1169,28 +843,13 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       }
       if (!workspaceId) throw new Error("Open a workspace to change its skills.");
       assertIdle(workspaceId);
-      const workspace = store.get("workspace", workspaceId);
-      const path = workspaceSkillPath(source, name);
-      const file = await safePath(workspace, path, true);
-      let previous: string | undefined;
-      try {
-        previous = (await readText(workspace, path)).content;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-      if (previous !== expectedContent)
-        throw new Error("Skill changed. Refresh the list before saving.");
-      if (change === undefined) {
-        if (previous === undefined) throw new Error("Skill no longer exists.");
-        await unlink(file);
-        // Only an emptied folder goes; scripts or references next to SKILL.md stay.
-        await rmdir(dirname(file)).catch(() => undefined);
-      } else {
-        await mkdir(dirname(file), { recursive: true });
-        if (previous === undefined)
-          await writeFile(file, change, { flag: "wx" });
-        else await replaceFile(file, change);
-      }
+      const { path } = await changeWorkspaceSkill(
+        store.get("workspace", workspaceId),
+        source,
+        name,
+        change,
+        expectedContent,
+      );
       events.publish("files-changed", { path }, workspaceId);
       return null;
     }
@@ -1384,37 +1043,7 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         })
         .parse(params);
       const workspace = store.get("workspace", workspaceId);
-      const file = await safePath(workspace, path);
-      const { command, args } = workspace.settings.editor;
-      const position = { line: String(line ?? 1), column: String(column ?? 1) };
-      const explicit = args.some((arg) => arg.includes("{line}"));
-      // Without {line} placeholders, VS Code style `--goto {file}` / `-g {file}` still jumps when given file:line:column.
-      const expanded = args.map((arg, index) => {
-        const goto =
-          line !== undefined &&
-          !explicit &&
-          arg === "{file}" &&
-          ["--goto", "-g"].includes(args[index - 1] ?? "");
-        return (
-          goto
-            ? `${file}:${position.line}:${position.column}`
-            : arg.replaceAll("{file}", file)
-        )
-          .replaceAll("{workspace}", workspace.path)
-          .replaceAll("{line}", position.line)
-          .replaceAll("{column}", position.column);
-      });
-      const child = spawn(command, expanded, {
-        cwd: workspace.path,
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      await new Promise<void>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("spawn", resolve);
-      });
-      child.unref();
+      await openInEditor(workspace, await safePath(workspace, path), line, column);
       return null;
     }
     case "changes": {
@@ -1426,25 +1055,7 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         })
         .parse(params);
       const workspace = store.get("workspace", workspaceId);
-      if (scope === "workspace") {
-        try {
-          const [diff, status] = await Promise.all([
-            gitRead(workspace, "diff"),
-            gitRead(workspace, "status"),
-          ]);
-          const changes = splitGitDiff(diff);
-          return changes.length
-            ? { changes }
-            : { git: diff, status: status || "Working tree clean." };
-        } catch (error) {
-          const reason =
-            error instanceof Error
-              ? (error as Error & { stderr?: string }).stderr?.trim() ||
-                error.message
-              : String(error);
-          return { git: "", status: `No Git diff available: ${reason}` };
-        }
-      }
+      if (scope === "workspace") return workspaceChanges(workspace);
       if (!runId) return { changes: [] };
       if (store.get("run", runId).workspaceId !== workspaceId)
         throw new Error("Prompt belongs to a different workspace.");
@@ -1465,15 +1076,14 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
     }
     case "revert.apply": {
       const { runId } = z.object({ runId: id }).parse(params);
-      if (maintenance) throw new Error("Another restore is in progress.");
-      maintenance = true;
-      agent.suspendScheduling();
-      try {
+      return inMaintenance(async () => {
         const run = store.get("run", runId);
         assertRevertible(run);
         const workspace = store.get("workspace", run.workspaceId);
         if (agent.busy(workspace))
           throw new Error("Stop running agents before reverting.");
+
+        // Reverting a turn also reverts every later turn in the chat.
         const turns = store
           .all("run")
           .filter((item) => item.chatId === run.chatId && !item.reverted);
@@ -1483,28 +1093,25 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
             .map((item) => item.id),
         );
         await processes.stopRuns(affected);
-        if (
-          processes
-            .list()
-            .some(
-              (terminal) =>
-                terminal.workspaceId === workspace.id &&
-                terminal.status === "running",
-            )
-        )
+        const hasRunningTerminal = processes
+          .list()
+          .some(
+            (terminal) =>
+              terminal.workspaceId === workspace.id &&
+              terminal.status === "running",
+          );
+        if (hasRunningTerminal)
           throw new Error(
             "Stop other workspace terminals and services before reverting.",
           );
+
         await mcp.closeWorkspace(workspace.id);
         languages.closeWorkspace(workspace.id);
         const prompt = await checkpoints.revert(workspace, run);
         events.publish("state");
         events.publish("files-changed", null, workspace.id);
         return { prompt };
-      } finally {
-        maintenance = false;
-        agent.resumeScheduling();
-      }
+      });
     }
     case "restore.recover": {
       if (maintenance) throw new Error("Workspace maintenance is in progress.");
@@ -1635,15 +1242,19 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         optionId,
         values,
       );
-      if (config.transport !== "stdio")
-        config.auth =
-          auth !== "auto"
-            ? auth
-            : !config.secretHeaders?.length &&
-                !config.headers &&
-                (await probeOAuth(config.url!))
-              ? "oauth"
-              : "none";
+      if (config.transport !== "stdio") {
+        if (auth !== "auto") {
+          config.auth = auth;
+        } else {
+          // Servers that already carry credentials in headers never need OAuth; others say so when probed.
+          const hasHeaderCredentials = Boolean(
+            config.secretHeaders?.length || config.headers,
+          );
+          const offersOAuth =
+            !hasHeaderCredentials && (await probeOAuth(config.url!));
+          config.auth = offersOAuth ? "oauth" : "none";
+        }
+      }
       for (const [key, value] of Object.entries(secrets))
         await credentials.set(mcpSecretKey(config.id, key), value);
       const global = store.global();

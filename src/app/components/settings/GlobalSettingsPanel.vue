@@ -10,52 +10,32 @@ import {
   ShieldCheck,
   BarChart3,
   Palette,
-  Check,
   Wrench,
   Server,
-  Plus,
-  LoaderCircle,
   Keyboard,
-  RotateCcw,
   Globe,
   Plug,
   User,
   Upload,
   Trash2,
   Info,
-  Coins,
-  ExternalLink,
 } from '../../icons';
 import {
-  comboFromEvent,
-  keybindingActions,
-  resolveKeybindings,
-  type KeybindingAction,
-} from '../../state/keybindings';
-import {
   defaultRunBudget,
-  type AppLanguage,
   type ApprovalMode,
   type GlobalSettings,
   type ProviderLimits,
   type Workspace,
 } from '../../../shared/types';
 import { rpc } from '../../services/api';
-import { effectsEnabled } from '../../theme/effects';
 import { approvalModes } from '../../state/approvals';
 import { confirmAction } from '../../state/dialogs';
 import {
-  activeSlot,
-  availableThemes,
   applyAppearance,
-  flamePalettes,
   setAppLanguage,
   t,
-  themes,
 } from '../../theme/themes';
-import type { CustomTheme, ThemeMode } from '../../../shared/types';
 import ProviderList from './ProviderList.vue';
-import ThemeEditorDialog from './ThemeEditorDialog.vue';
 import AppSelect from '../common/AppSelect.vue';
 import RunPolicyFields from './RunPolicyFields.vue';
 import UsageDashboard from '../usage/UsageDashboard.vue';
@@ -64,7 +44,9 @@ import SkillManager from './SkillManager.vue';
 import LanguageServerPanel from './LanguageServerPanel.vue';
 import McpMarketplace from './McpMarketplace.vue';
 import AvatarCropper from './AvatarCropper.vue';
-import packageJson from '../../../../package.json';
+import AppInfoPanel from './AppInfoPanel.vue';
+import AppearanceSettingsPanel from './AppearanceSettingsPanel.vue';
+import KeybindingSettingsPanel from './KeybindingSettingsPanel.vue';
 
 const props = defineProps<{
   global: GlobalSettings;
@@ -100,9 +82,6 @@ async function testNotification() {
 settings.value.budget ??= { ...defaultRunBudget };
 setAppLanguage(settings.value.language);
 watch(() => settings.value.language, setAppLanguage);
-function setLanguage(value: string): void {
-  settings.value.language = value as AppLanguage;
-}
 settings.value.profile ??= {};
 const profile = computed(() => settings.value.profile!);
 const cropSource = ref('');
@@ -136,64 +115,6 @@ const sections: SettingsSection[] = [
   { id: 'system', label: 'CLIs & workspaces', icon: TerminalSquare, words: 'cli path executable codex claude cloudflared new workspace defaults' },
   { id: 'remote', label: 'Remote access', icon: Globe, words: 'remote access tunnel phone qr cloudflared' },
   { id: 'info', label: 'Info', icon: Info, words: 'info about version update check github source donate ko-fi support naamloos website' },
-];
-const appVersion = ref('');
-const checkingUpdate = ref(false);
-const updateAvailable = ref(false);
-const installingUpdate = ref(false);
-async function installUpdate() {
-  if (installingUpdate.value) return;
-  installingUpdate.value = true;
-  try {
-    await rpc('update.install');
-  } catch (error) {
-    updateStatus.value = error instanceof Error ? error.message : String(error);
-    installingUpdate.value = false;
-  }
-}
-const updateStatus = ref('');
-async function checkForUpdates() {
-  if (checkingUpdate.value) return;
-  checkingUpdate.value = true;
-  updateStatus.value = '';
-  try {
-    const info = await rpc<{ current: string; supported: boolean; available: boolean; latest?: string; error?: string }>('update.check');
-    appVersion.value = info.current;
-    updateAvailable.value = info.supported && info.available && !info.error;
-    updateStatus.value = info.error || (!info.supported
-      ? t('Automatic updates are only available in the installed Windows app.')
-      : info.available
-        ? t('Version {version} is available.', { version: info.latest ?? '' })
-        : t('You are up to date.'));
-  } catch (error) {
-    updateStatus.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    checkingUpdate.value = false;
-  }
-}
-const appIcon = new URL('../../assets/icon.png', import.meta.url).href;
-rpc<{ current: string }>('update.check')
-  .then((info) => (appVersion.value = info.current))
-  .catch(() => (appVersion.value = '?'));
-const infoLinks = [
-  { label: 'BasedCode on GitHub', url: 'https://github.com/naamloos/basedcode', icon: ExternalLink },
-  { label: 'Donate (Ko-fi)', url: 'https://ko-fi.com/naamloos', icon: Coins },
-  { label: 'Main Developer', url: 'https://naamloos.dev', icon: Globe },
-  { label: 'License', url: 'https://github.com/naamloos/basedcode/blob/HEAD/LICENSE', icon: ExternalLink },
-];
-function openLink(url: string) {
-  void rpc('external.open', { url });
-}
-// Credits come straight from package.json, so they stay current as dependencies change.
-// Versions are the ranges package.json asks for, shown without the ^/~ prefix.
-function creditList(packages: Record<string, string>) {
-  return Object.entries(packages)
-    .map(([name, range]) => ({ name, version: range.replace(/^[\^~]/, '') }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-const creditGroups = [
-  { title: 'Used by the app', packages: creditList(packageJson.dependencies) },
-  { title: 'Development tools', packages: creditList(packageJson.devDependencies) },
 ];
 const {
   query: settingsSearch,
@@ -281,87 +202,6 @@ watch(
   (appearance) => applyAppearance(appearance),
   { deep: true },
 );
-// Theme picker: two slots, the mode picks which one is live.
-const modeOptions: { value: ThemeMode; label: string }[] = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'system', label: 'System' },
-];
-const themeSlot = ref<'dark' | 'light'>(activeSlot(settings.value.appearance));
-const themeQuery = ref('');
-const allThemes = computed(() => availableThemes(settings.value.appearance));
-const editingThemeId = ref('');
-const editingTheme = ref<CustomTheme>();
-function createTheme() {
-  const base = allThemes.value.find((theme) => theme.id === slotTheme.value) ?? themes[0];
-  const tokens = { ...base.tokens };
-  for (const key of Object.keys(tokens) as (keyof typeof tokens)[]) {
-    if (!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(tokens[key])) tokens[key] = themes[0].tokens[key];
-  }
-  editingThemeId.value = '';
-  editingTheme.value = {
-    id: 'custom-' + crypto.randomUUID().replaceAll('-', '').slice(0, 32),
-    name: base.name.slice(0, 55) + ' copy',
-    scheme: base.scheme,
-    tokens,
-  };
-}
-const themeMenu = ref<{ id: string; x: number; y: number }>();
-function openThemeMenu(event: MouseEvent, id: string) {
-  themeMenu.value = { id, x: Math.min(event.clientX, window.innerWidth - 180), y: Math.min(event.clientY, window.innerHeight - 90) };
-}
-function closeThemeMenu() {
-  themeMenu.value = undefined;
-}
-function editTheme(id = slotTheme.value) {
-  closeThemeMenu();
-  const theme = settings.value.appearance.customThemes?.find((item) => item.id === id);
-  if (!theme) return;
-  editingThemeId.value = theme.id;
-  editingTheme.value = structuredClone(toRaw(theme));
-}
-function closeThemeEditor() {
-  editingTheme.value = undefined;
-  editingThemeId.value = '';
-}
-function saveTheme(theme: CustomTheme) {
-  const appearance = settings.value.appearance;
-  appearance.customThemes = [...(appearance.customThemes ?? []).filter((item) => item.id !== theme.id), theme];
-  themeQuery.value = '';
-  pickTheme(theme.id);
-  closeThemeEditor();
-}
-function deleteTheme(id = editingThemeId.value) {
-  closeThemeMenu();
-  const appearance = settings.value.appearance;
-  appearance.customThemes = appearance.customThemes?.filter((theme) => theme.id !== id);
-  if (appearance.theme === id) appearance.theme = 'based';
-  if (appearance.lightTheme === id) appearance.lightTheme = 'normie';
-  closeThemeEditor();
-}
-const slotTheme = computed(() =>
-  themeSlot.value === 'dark' ? settings.value.appearance.theme : settings.value.appearance.lightTheme,
-);
-function themeName(id: string) {
-  return allThemes.value.find((theme) => theme.id === id)?.name ?? id;
-}
-function pickTheme(id: string) {
-  if (themeSlot.value === 'dark') settings.value.appearance.theme = id;
-  else settings.value.appearance.lightTheme = id;
-}
-const themeGroups = computed(() => {
-  const words = themeQuery.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = allThemes.value.filter((theme) => {
-    const text = `${theme.name} ${theme.tagline} ${theme.id}`.toLowerCase();
-    return words.every((word) => text.includes(word));
-  });
-  return [
-    { label: 'BasedCode originals', items: matches.filter((x) => x.origin === 'original' && x.scheme === 'dark') },
-    { label: 'Popular ports', items: matches.filter((x) => x.origin === 'port' && x.scheme === 'dark') },
-    { label: 'Light', items: matches.filter((x) => x.origin !== 'custom' && x.scheme === 'light') },
-    { label: 'Custom themes', items: matches.filter((x) => x.origin === 'custom') },
-  ];
-});
 
 function close() {
   applyAppearance(props.global.appearance);
@@ -369,37 +209,6 @@ function close() {
   emit('close');
 }
 
-// Shortcuts: click a binding, press the new combo. Escape cancels, Backspace unbinds.
-const recording = ref<KeybindingAction | ''>('');
-const bindings = computed(() => resolveKeybindings(settings.value.keybindings));
-function conflictFor(id: KeybindingAction) {
-  const combo = bindings.value[id];
-  return combo
-    ? keybindingActions.find((action) => action.id !== id && bindings.value[action.id] === combo)
-    : undefined;
-}
-function setBinding(id: KeybindingAction, combo: string) {
-  const fallback = keybindingActions.find((action) => action.id === id)?.defaultKey;
-  if (combo === fallback) delete settings.value.keybindings[id];
-  else settings.value.keybindings[id] = combo;
-}
-function record(event: KeyboardEvent, id: KeybindingAction) {
-  event.preventDefault();
-  event.stopPropagation();
-  if (event.key === 'Escape') {
-    recording.value = '';
-    return;
-  }
-  if (event.key === 'Backspace' || event.key === 'Delete') {
-    setBinding(id, '');
-    recording.value = '';
-    return;
-  }
-  const combo = comboFromEvent(event);
-  if (!combo) return;
-  setBinding(id, combo);
-  recording.value = '';
-}
 
 async function save(closeAfter = true) {
   try {
@@ -870,276 +679,15 @@ async function resetTemplate() {
             :persist="persistSettings"
             @saved="emit('saved')"
           />
-          <template v-else-if="tab === 'appearance'">
-            <h3>{{ t('Language') }}</h3>
-            <AppSelect
-              :model-value="settings.language ?? 'en'"
-              :aria-label="t('Language')"
-              :options="[
-                { value: 'en', label: t('English') },
-                { value: 'nl', label: t('Dutch') },
-                { value: 'based', label: t('Based') },
-              ]"
-              @update:model-value="setLanguage"
-            />
-            <h3>{{ t('Mode') }}</h3>
-            <div
-              class="seg-control"
-              role="radiogroup"
-              :aria-label="t('Mode')"
-              :style="{ '--seg-count': 3, '--seg-index': modeOptions.findIndex((o) => o.value === settings.appearance.mode) }"
-            >
-              <button
-                v-for="option in modeOptions"
-                :key="option.value"
-                type="button"
-                role="radio"
-                :aria-checked="settings.appearance.mode === option.value"
-                @click="settings.appearance.mode = option.value"
-              >
-                {{ t(option.label) }}
-              </button>
-            </div>
-            <h3>{{ t('Theme') }}</h3>
-            <div class="theme-editor-actions">
-              <button
-                type="button"
-                class="secondary-button"
-                :disabled="(settings.appearance.customThemes?.length ?? 0) >= 100"
-                @click="createTheme"
-              >
-                <Plus :size="14" /> {{ t('Create theme') }}
-              </button>
-              <button
-                v-if="settings.appearance.customThemes?.some((theme) => theme.id === slotTheme)"
-                type="button"
-                class="secondary-button"
-                @click="editTheme()"
-              >
-                <Palette :size="14" /> {{ t('Edit theme') }}
-              </button>
-            </div>
-            <ThemeEditorDialog
-              v-if="editingTheme"
-              :theme="editingTheme"
-              :existing="!!editingThemeId"
-              @close="closeThemeEditor"
-              @save="saveTheme"
-              @delete="deleteTheme()"
-            />
-            <div
-              class="seg-control"
-              role="tablist"
-              :aria-label="t('Theme slot')"
-              :style="{ '--seg-count': 2, '--seg-index': themeSlot === 'dark' ? 0 : 1 }"
-            >
-              <button
-                type="button"
-                role="tab"
-                :aria-selected="themeSlot === 'dark'"
-                @click="themeSlot = 'dark'"
-              >
-                {{ t('Dark theme') }} · {{ themeName(settings.appearance.theme) }}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                :aria-selected="themeSlot === 'light'"
-                @click="themeSlot = 'light'"
-              >
-                {{ t('Light theme') }} · {{ themeName(settings.appearance.lightTheme) }}
-              </button>
-            </div>
-            <input
-              v-model="themeQuery"
-              class="theme-search"
-              type="search"
-              autocomplete="off"
-              :placeholder="t('Search themes')"
-              :aria-label="t('Search themes')"
-            >
-            <template
-              v-for="group in themeGroups"
-              :key="group.label"
-            >
-              <h4
-                v-if="group.items.length"
-                class="section-label"
-              >
-                {{ t(group.label) }}
-              </h4>
-              <div
-                v-if="group.items.length"
-                class="theme-grid"
-              >
-                <button
-                  v-for="theme in group.items"
-                  :key="theme.id"
-                  type="button"
-                  class="theme-card"
-                  :class="{
-                    selected: slotTheme === theme.id,
-                    rgb: theme.tokens['--accent'].includes('--rgb-hue'),
-                  }"
-                  :style="{
-                    ...theme.tokens,
-                    background: theme.tokens['--surface'],
-                    color: theme.tokens['--text'],
-                  }"
-                  :aria-pressed="slotTheme === theme.id"
-                  @click="pickTheme(theme.id)"
-                  @contextmenu="theme.origin === 'custom' && ($event.preventDefault(), openThemeMenu($event, theme.id))"
-                >
-                  <span
-                    class="theme-preview"
-                    :style="{ background: theme.tokens['--bg'] }"
-                  >
-                    <span
-                      class="theme-preview-surface"
-                      :style="{ background: theme.tokens['--surface-raised'] }"
-                    >
-                      <span
-                        class="theme-preview-line"
-                        :style="{ background: theme.tokens['--text'] }"
-                      />
-                      <span
-                        class="theme-preview-line short"
-                        :style="{ background: theme.tokens['--muted'] }"
-                      />
-                      <span class="theme-preview-foot">
-                        <span
-                          class="theme-preview-button"
-                          :style="{ background: theme.tokens['--accent'] }"
-                        />
-                        <span
-                          class="theme-preview-dot"
-                          :style="{ background: theme.tokens['--success'] }"
-                        />
-                        <span
-                          class="theme-preview-dot"
-                          :style="{ background: theme.tokens['--danger'] }"
-                        />
-                      </span>
-                    </span>
-                  </span>
-                  <strong>{{ theme.name }}<Check
-                    v-if="slotTheme === theme.id"
-                    :size="13"
-                  /></strong>
-                  <small :style="{ color: theme.tokens['--muted'] }">{{ t(theme.tagline) }}</small>
-                </button>
-              </div>
-            </template>
-            <Teleport
-              v-if="themeMenu"
-              to="body"
-            >
-              <div
-                class="theme-menu-backdrop"
-                @click="closeThemeMenu"
-                @contextmenu.prevent="closeThemeMenu"
-                @keydown.esc="closeThemeMenu"
-              />
-              <div
-                class="chat-menu at-cursor theme-menu"
-                role="menu"
-                :style="{ left: `${themeMenu.x}px`, top: `${themeMenu.y}px` }"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  @click="editTheme(themeMenu.id)"
-                >
-                  <Palette :size="14" /> {{ t('Edit theme') }}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="danger"
-                  @click="deleteTheme(themeMenu.id)"
-                >
-                  <Trash2 :size="14" /> {{ t('Delete theme') }}
-                </button>
-              </div>
-            </Teleport>
+          <AppearanceSettingsPanel
+            v-else-if="tab === 'appearance'"
+            v-model="settings"
+          />
 
-            <h3><Sparkles :size="15" /> {{ t('Flames') }}</h3>
-            <label class="checkbox"><input
-                                      v-model="effectsEnabled"
-                                      autocomplete="off"
-                                      type="checkbox"
-                                    >
-              {{ t("Flame effects (follows your system's reduced-motion setting)") }}</label>
-            <div class="flame-grid">
-              <button
-                v-for="palette in flamePalettes"
-                :key="palette.id"
-                type="button"
-                class="flame-card"
-                :class="{ selected: settings.appearance.flame === palette.id }"
-                :aria-pressed="settings.appearance.flame === palette.id"
-                @click="settings.appearance.flame = palette.id"
-              >
-                <span
-                  class="flame-swatch"
-                  :style="{
-                    background: palette.rainbow
-                      ? 'linear-gradient(to top, #f00, #ff0, #0f0, #0ff, #00f, #f0f)'
-                      : `linear-gradient(to top, ${palette.colors[0]}, ${palette.colors[1]} 40%, ${palette.colors[2]} 75%, ${palette.colors[3]})`,
-                  }"
-                />{{ t(palette.name) }}
-              </button>
-            </div>
-          </template>
-
-          <template v-else-if="tab === 'keybindings'">
-            <h3><Keyboard :size="15" /> {{ t('Keyboard shortcuts') }}</h3>
-            <p class="muted">
-              {{
-                t(
-                  'Click a shortcut, then press the new key combination. Escape cancels; Backspace removes the shortcut.',
-                )
-              }}
-            </p>
-            <div class="keybinding-list">
-              <div
-                v-for="action in keybindingActions"
-                :key="action.id"
-                class="keybinding-row"
-              >
-                <span>{{ t(action.name)
-                }}<small
-                  v-if="conflictFor(action.id)"
-                  class="error-text"
-                >
-                  ·
-                  {{
-                    t('also used by {name}', { name: t(conflictFor(action.id)?.name ?? '') })
-                  }}</small></span>
-                <button
-                  type="button"
-                  class="keybinding-key"
-                  :class="{ recording: recording === action.id }"
-                  :aria-label="t('Change shortcut for {name}', { name: t(action.name) })"
-                  @click="recording = action.id"
-                  @blur="recording === action.id && (recording = '')"
-                  @keydown="recording === action.id && record($event, action.id)"
-                >
-                  {{
-                    recording === action.id ? t('Press keys…') : bindings[action.id] || t('Unbound')
-                  }}
-                </button><button
-                  type="button"
-                  class="icon-button"
-                  :title="t('Reset to default')"
-                  :disabled="!(action.id in settings.keybindings)"
-                  @click="delete settings.keybindings[action.id]"
-                >
-                  <RotateCcw :size="14" />
-                </button>
-              </div>
-            </div>
-          </template>
+          <KeybindingSettingsPanel
+            v-else-if="tab === 'keybindings'"
+            v-model="settings.keybindings"
+          />
 
           <UsageDashboard
             v-else-if="tab === 'usage'"
@@ -1205,89 +753,7 @@ async function resetTemplate() {
             </div>
           </template>
 
-          <template v-else-if="tab === 'info'">
-            <div class="settings-info">
-              <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center">
-                <img
-                  :src="appIcon"
-                  alt="BasedCode"
-                  width="72"
-                  height="72"
-                >
-                <strong style="font-size: 1.3em">BasedCode</strong>
-                <span class="muted">{{ t('Version') }} {{ appVersion || '…' }}</span>
-                <button
-                  class="secondary-button"
-                  :disabled="checkingUpdate || installingUpdate"
-                  @click="checkForUpdates"
-                >
-                  <LoaderCircle
-                    v-if="checkingUpdate"
-                    :size="14"
-                  />
-                  {{ checkingUpdate ? t('Checking for updates…') : t('Check for updates') }}
-                </button>
-                <button
-                  v-if="updateAvailable"
-                  class="secondary-button"
-                  :disabled="installingUpdate || checkingUpdate"
-                  @click="installUpdate"
-                >
-                  {{ installingUpdate ? t('Updating…') : t('Install update and restart') }}
-                </button>
-                <span
-                  v-if="updateStatus"
-                  class="muted small"
-                  role="status"
-                >{{ updateStatus }}</span>
-              </div>
-              <div
-                style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: min(100%, 380px); margin: 20px auto 0"
-              >
-                <button
-                  v-for="link in infoLinks"
-                  :key="link.url"
-                  class="secondary-button"
-                  style="justify-content: center"
-                  :title="link.url"
-                  @click="openLink(link.url)"
-                >
-                  <component
-                    :is="link.icon"
-                    :size="14"
-                  /> {{ t(link.label) }}
-                </button>
-              </div>
-              <div class="package-credits">
-                <h4>{{ t('Built with') }}</h4>
-                <p class="muted small">
-                  {{ t('BasedCode stands on these open source packages.') }}
-                </p>
-                <section
-                  v-for="group in creditGroups"
-                  :key="group.title"
-                  class="package-credit-group"
-                >
-                  <h5>{{ t(group.title) }} <span class="muted">({{ group.packages.length }})</span></h5>
-                  <ul class="package-credit-list">
-                    <li
-                      v-for="item in group.packages"
-                      :key="item.name"
-                    >
-                      <button
-                        class="package-credit"
-                        :title="`https://www.npmjs.com/package/${item.name}`"
-                        @click="openLink(`https://www.npmjs.com/package/${item.name}`)"
-                      >
-                        {{ item.name }}
-                      </button>
-                      <span class="package-credit-version">{{ item.version }}</span>
-                    </li>
-                  </ul>
-                </section>
-              </div>
-            </div>
-          </template>
+          <AppInfoPanel v-else-if="tab === 'info'" />
 
           <template v-else>
             <h3><TerminalSquare :size="15" /> {{ t('Agent CLIs') }}</h3>

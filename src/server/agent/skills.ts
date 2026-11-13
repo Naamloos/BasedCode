@@ -2,7 +2,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import type { Workspace } from "../../shared/types.js";
-import { fileTree, readText } from "../workspace/workspace.js";
+import { replaceFile } from "../workspace/atomicWrite.js";
+import { fileTree, readText, safePath } from "../workspace/workspace.js";
 
 export const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const maxSkillLength = 50_000;
@@ -142,6 +143,38 @@ export async function changeGlobalSkill(
   }
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, previous === undefined ? { flag: "wx" } : {});
+  return { path };
+}
+
+/**
+ * Workspace counterpart of changeGlobalSkill, writing inside the workspace boundary. Returns the workspace-relative
+ * path. Only an emptied folder goes on delete; scripts or references next to SKILL.md stay.
+ */
+export async function changeWorkspaceSkill(
+  workspace: Workspace,
+  source: SkillSource,
+  name: string,
+  content: string | undefined,
+  expectedContent: string | undefined,
+) {
+  const path = workspaceSkillPath(source, name);
+  const file = await safePath(workspace, path, true);
+  let previous: string | undefined;
+  try {
+    previous = (await readText(workspace, path)).content;
+  } catch (error) {
+    if (!missing(error)) throw error;
+  }
+  if (previous !== expectedContent) throw new Error("Skill changed. Refresh the list before saving.");
+  if (content === undefined) {
+    if (previous === undefined) throw new Error("Skill no longer exists.");
+    await unlink(file);
+    await rmdir(dirname(file)).catch(() => undefined);
+    return { path };
+  }
+  await mkdir(dirname(file), { recursive: true });
+  if (previous === undefined) await writeFile(file, content, { flag: "wx" });
+  else await replaceFile(file, content);
   return { path };
 }
 

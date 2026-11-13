@@ -4,11 +4,11 @@
 
 # BasedCode
 
-BasedCode is a desktop app for working on real codebases with an AI agent. You open a project folder, pick a model and give the agent a task. The agent reads, edits, runs commands and checks its work through BasedCode's own tools. You approve what it does and can review or revert every change.
+BasedCode is a desktop app for coding with AI agents. Open a project folder, pick a model and give it a task. The agent reads files, edits code and runs commands through BasedCode's tools. You control approvals and can review diffs or restore files from checkpoints.
 
 It works with Claude Code, Codex and Antigravity (through your existing CLI login) and with local models through Ollama or LM Studio. Every provider gets the same tools, permissions and history, so you can switch models in the middle of a chat.
 
-BasedCode has a sense of humor. You can switch on fire effects and the "Based" slang language in settings. Out of the box it starts in plain English with effects off.
+You can enable fire effects and the "Based" slang language in settings. The app starts in English with effects off.
 
 ## Screenshots
 
@@ -30,7 +30,7 @@ BasedCode has a sense of humor. You can switch on fire effects and the "Based" s
 - **Review and undo.** See the diff of every prompt, and revert the workspace to any earlier prompt. Fork a chat from any message, re-run a prompt, or ask a second model for a second opinion and compare the results.
 - **Provider fallback.** Put providers in order per workspace. When one runs out of quota, the next one continues the same chat.
 - **Built-in workspace tools.** A file tree, a terminal, a Git panel that stages, commits and pushes with a written message, and diagnostics from language servers (TypeScript, Vue, Python, C# and more).
-- **Extensible.** Add MCP servers (including from a built-in marketplace) and skills. Skills load from `.basedcode/skills/<name>/SKILL.md` in a workspace, or globally from `~/.basedcode/skills`, `~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills`. `AGENTS.md` and `CLAUDE.md` project instructions load automatically.
+- **MCP servers and skills.** Add MCP servers (including from a built-in marketplace) and skills. Skills load from `.basedcode/skills/<name>/SKILL.md` in a workspace, or globally from `~/.basedcode/skills`, `~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills`. `AGENTS.md` and `CLAUDE.md` project instructions load automatically.
 - **Usage tracking.** See tokens, cost and provider limits per chat, per model and over time.
 - **Remote access.** Open BasedCode from your phone through a Cloudflare tunnel (needs `cloudflared`), and get push notifications for approvals and finished prompts.
 - **Themes and languages.** Dark and light themes, a theme editor, and the UI in English, Dutch or Based.
@@ -46,16 +46,16 @@ A guided mode gives the agent a role for the whole chat. Type the command in the
 | `/plan` | Planner | Turns an idea into a written implementation plan with scope, design, ordered tasks and risks. It doesn't write the code. |
 | `/dig` | Archaeology | Traces code paths, dependencies and Git history to explain why code is the way it is and what a change would break. Read-only. |
 | `/devil` | Devil's advocate | Argues against your design, questions assumptions, hunts edge cases and pitches alternatives. |
-| `/grill` | Grill | Interrogates you about your design, one hard question at a time, until every gap is answered. |
-| `/refactor` | Refactor | Restructures code in small steps that keep behavior identical, with tests proving it after each step. |
+| `/grill` | Grill | Questions your design one decision at a time to uncover missing requirements and assumptions. |
+| `/refactor` | Refactor | Refactors code in small steps and runs tests after each change to check for regressions. |
 | `/tests` | Test architect | Designs a test plan for a feature, then writes and runs the tests. |
 | `/teach` | Teacher | Teaches you a skill or a codebase with lessons and exercises at your level. |
-| `/perf` | Performance detective | Measures first, finds the real bottleneck, fixes it and proves the improvement with numbers. |
+| `/perf` | Performance detective | Profiles slow code, fixes measured bottlenecks and compares performance before and after. |
 | `/migrate` | Migration planner | Plans and carries out a package or framework upgrade in small, checked steps. |
 | `/reviewer` | Reviewer | Reviews someone else's pull request: explains the change, finds problems and drafts comments. It doesn't post anything. |
 | `/incident` | Incident | For production problems: stabilize first, find the cause from logs and recent changes, end with a postmortem. |
-| `/hackerman` | Hackerman | Hunts for security holes in your own code like an attacker would, proves them safely and helps fix them. |
-| `/docs` | Docs writer | Writes or fixes documentation, checking every command and example against the code. |
+| `/hackerman` | Hackerman | Reviews your code for security vulnerabilities, tests potential exploits and helps fix them. |
+| `/docs` | Docs writer | Writes or updates documentation and checks commands and examples against the code. |
 | `/design` | Designer | Interviews you about a new site or app with color, font and rounding pickers, and writes a design specification. |
 
 Other commands include `/new`, `/plain`, `/compact`, `/export`, `/model`, `/skill`, `/create-skill` and `/install-mcp`. Type `/help` for the full list.
@@ -85,7 +85,7 @@ The first start downloads the NW.js runtime, then the BasedCode window opens.
 
 > **npm 11 and install scripts:** recent npm versions may skip install scripts and print `npm warn install-scripts`. BasedCode needs them for `node-pty` and `nw`. If the app fails to start after a fresh install, run `npm install-scripts ls`, approve the listed packages with `npm install-scripts approve <pkg>`, and run `npm install` again.
 
-Chats and settings are stored in `%LOCALAPPDATA%\BasedCode` on Windows and `~/.local/share/basedcode` on Linux. Set `BASEDCODE_DATA_DIR` to use another folder.
+BasedCode stores chats and settings in `%LOCALAPPDATA%\BasedCode` on Windows and `~/.local/share/basedcode` on Linux. Set `BASEDCODE_DATA_DIR` to use another folder.
 
 ### Connect a provider
 
@@ -116,8 +116,6 @@ Watch the tool cards as the agent searches files and reads the history. Then try
 
 ## Limitations
 
-BasedCode is still young.
-
 - **No sandbox yet.** Commands run with your own user permissions. That is why every terminal command needs approval.
 - MCP and language servers run as normal child processes.
 - Reverting a prompt restores files only. It does not undo Git commits, branches, stashes or the index. Checkpoints skip dependency folders, links and very large files.
@@ -126,9 +124,9 @@ BasedCode is still young.
 
 ## Releases
 
-Releases are published on [GitHub Releases](https://github.com/Naamloos/BasedCode/releases) with a Windows installer attached.
+Download Windows installers from [GitHub Releases](https://github.com/Naamloos/BasedCode/releases).
 
-A release is made by bumping `version` in `package.json` on `master`. The [release workflow](.github/workflows/release.yml) then tags `v<version>`, builds the installer on a Windows runner and publishes the release. It can also be started by pushing a `v*` tag or running the workflow by hand.
+To release, bump `version` in `package.json` on `master`. The [release workflow](.github/workflows/release.yml) tags `v<version>`, builds the installer on a Windows runner and publishes the release. You can also trigger it by pushing a `v*` tag or running the workflow.
 
 ## Contributing
 
@@ -140,7 +138,7 @@ npm test
 npm run package:win  # Windows installer, after npm run build
 ```
 
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:` and so on) and are checked by commitlint on every commit. See [AGENTS.md](AGENTS.md) for the project layout and conventions.
+Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:` and so on). The commit-msg hook runs commitlint. See [AGENTS.md](AGENTS.md) for the project layout and conventions.
 
 ## License
 

@@ -9,7 +9,7 @@ WORK
 - Understand before changing: find the relevant code, read how the same thing is done nearby, follow the project's conventions and config.
 - Make the smallest change that fully solves the task. No drive-by refactors, speculative abstractions or comments that narrate the code. Preserve the user's existing work.
 - If the request is ambiguous in a way that changes the outcome, ask. Otherwise take the sensible reading, say which in a line, and go. Accept steering mid-task.
-- Multi-step task: update_plan first, and keep it current.
+- Multi-step task: update_plan first, and keep it current. Continue through the agreed scope; report progress without ending the turn between batches. Stop only when finished, blocked, or asked to stop.
 - If the user gives a time budget or deadline, call prompt_time_limit immediately to set it for this prompt (check the current time first for relative budgets). The harness cuts off work one minute before that deadline. Check remaining time as needed, finish before the cutoff, and never extend the deadline without the user's instruction. Previous prompts' deadlines do not apply.
 - Verify: run the relevant checks or tests after a change and fix the diagnostics and failures you introduced. Never weaken a test to make it pass.
 - Two failed attempts at the same approach: stop, re-read the evidence, and change the approach or ask.
@@ -33,7 +33,7 @@ REPLIES
 - Lead with the answer or the outcome. No restating the request, no step-by-step narration of what you did, no closing offers.
 - As short as the content allows. After changing things: what changed, what was verified and how, what was not. A few lines.
 - Link files as Markdown with workspace-relative paths, e.g. [App.vue:42](src/App.vue:42); embed images with ![alt](path). Unicode (→) rather than LaTeX unless asked. Sparse Lucide shortcodes like :lucide-check-circle: are fine.
-Great engineer first, based clanker second.`;
+`;
 
 const plainVoice = `VOICE
 A calm, direct senior engineer: clear, friendly and professional, no slang or profanity. Push back when the user is wrong. Code, commands, numbers and risks are exact.`;
@@ -49,7 +49,7 @@ export function personalizedSystemPrompt(profile: UserProfile | undefined): stri
   if (!profile) return systemPrompt;
   let prompt = systemPrompt;
   if (profile.voice === 'plain') {
-    prompt = prompt.replace(/VOICE\n[^\n]*/, plainVoice).replace(/\nGreat engineer first, based clanker second\.$/, '');
+    prompt = prompt.replace(/VOICE\n[^\n]*/, plainVoice);
   }
   const lines = [
     profile.name?.trim() && `- Name: ${profile.name.trim()}. Address them by name now and then.`,
@@ -79,7 +79,7 @@ Keep exact identifiers, paths, error messages and numbers. Drop pleasantries, re
 export function handOffPrompt(from: string, to: string, context: string | undefined): string {
   const extra = context ? `\n\nContext from the user for this hand-off:\n${context}` : '';
   return `Hand-off: the conversation above happened in ${from}; this chat continues it in ${to}. Follow ${to}'s instructions from now on, not the earlier mode's. A wrap-up report above is context to build on, not a reason to stop.
-Say in two or three lines what you are taking over and how you will go about it here, then carry on.${extra}`;
+State what you are taking over, then continue the work.${extra}`;
 }
 
 export const scratchPrompt = `This is a plain chat with no project. The workspace is a private scratch folder made for this chat: use it freely for notes, scripts and generated files, and do not assume there is a codebase to inspect unless the user provides one.`;

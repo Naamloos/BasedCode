@@ -98,7 +98,6 @@ import {
   slashCommands,
   slashCommandSignature,
   type SlashCommandInfo,
-  type SlashCommandParam,
 } from '../shared/commands';
 import { legacyMcpResources } from '../shared/mcpUi';
 import { previewMediaType } from '../shared/preview';
@@ -162,12 +161,25 @@ import {
   webglRenderer,
 } from './theme/effects';
 import { installAntics } from './theme/antics';
-import { runStatus, notableRunStates, commandTerminal } from './utils/status';
+import {
+  runStatus,
+  notableRunStates,
+  groupCommandTerminal,
+  toolGroupLabel,
+  toolGroupState,
+} from './utils/status';
 import { vAutoscroll } from './directives/autoscroll';
 import { useAttachments } from './state/attachments';
 import { usePaneLayout } from './state/paneLayout';
 import { useWindowFrame } from './services/windowFrame';
 import { confirmAction } from './state/dialogs';
+import { useChatFind } from './state/chatFind';
+import { useComposerCommands } from './state/composerCommands';
+import { useChatSidebar } from './state/chatSidebar';
+import { useCommandPalette, type PaletteItem } from './state/commandPalette';
+import { useWorkspaceDiagnostics } from './state/workspaceDiagnostics';
+import { useChatReviews, type ModelChoice } from './state/chatReviews';
+import { useModeHandoff } from './state/modeHandoff';
 import appIcon from './assets/icon.png';
 
 const windowFrame = useWindowFrame();
@@ -391,109 +403,11 @@ const chat = computed(() => chats.value.find((item) => item.id === chatId.value)
 const scratchIds = computed(
   () => new Set(state.value.workspaces.filter((item) => item.scratch).map((item) => item.id)),
 );
-const chatSearch = ref('');
-/** Chats whose title or messages contain every word of the search. */
-const searchMatches = computed(() => {
-  const words = chatSearch.value.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return undefined;
-  const text = new Map<string, string>();
-  for (const entry of state.value.chats) text.set(entry.id, entry.title.toLowerCase());
-  for (const message of state.value.messages)
-    if (message.role === 'user' || message.role === 'assistant')
-      text.set(
-        message.chatId,
-        `${text.get(message.chatId) ?? ''}\n${message.content.toLowerCase()}`,
-      );
-  return new Set(
-    state.value.chats
-      .filter((entry) => words.every((word) => text.get(entry.id)?.includes(word)))
-      .map((entry) => entry.id),
-  );
-});
-const workingStates = new Set(['queued', 'running', 'paused']);
-/** What a group's chats are doing, for the badges on group headers. */
-function groupActivity(chats: Chat[]) {
-  let working = 0;
-  let waiting = 0;
-  for (const entry of chats) {
-    const latest = state.value.runs.filter((run) => run.chatId === entry.id).at(-1);
-    if (latest?.status === 'awaiting_approval') waiting++;
-    else if (latest && workingStates.has(latest.status)) working++;
-  }
-  return { working, waiting };
-}
-/** Sidebar groups: pinned chats, project workspaces (most recently opened first), then plain chats. */
-/** The last segment of a folder path: the name a workspace gets when it is opened. */
-function folderName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-const chatGroups = computed(() => {
-  const matches = searchMatches.value;
-  const newestFirst = state.value.chats
-    .slice()
-    .reverse()
-    // Second-opinion sub-chats live under the chat they review, not in the sidebar.
-    .filter((entry) => !entry.reviewOf && (!matches || matches.has(entry.id)));
-  const archived = newestFirst.filter((entry) => entry.archivedAt);
-  const current = newestFirst.filter((entry) => !entry.archivedAt);
-  const unpinned = current.filter((entry) => !entry.pinned);
-  type Group = {
-    id: string;
-    name: string;
-    path: string;
-    kind: 'pinned' | 'workspace' | 'plain' | 'archived';
-    chats: Chat[];
-    /** The folder's own name, set only when the workspace has a different display name. */
-    folder?: string;
-  };
-  const groups: Group[] = [];
-  const pinned = current.filter((entry) => entry.pinned);
-  if (pinned.length)
-    groups.push({
-      id: 'pinned',
-      name: t('Pinned'),
-      path: t('Pinned chats'),
-      kind: 'pinned',
-      chats: pinned,
-    });
-  // Plain chats are a permanent group, always there to start a chat without a workspace.
-  const plain = unpinned.filter((entry) => scratchIds.value.has(entry.workspaceId));
-  if (!matches || plain.length)
-    groups.push({
-      id: 'plain',
-      name: t('Chats'),
-      path: t('Plain chats without a workspace'),
-      kind: 'plain',
-      chats: plain,
-    });
-  for (const item of recentWorkspaces.value) {
-    const chats = unpinned.filter((entry) => entry.workspaceId === item.id);
-    if (matches && !chats.length) continue;
-    const folder = folderName(item.path);
-    groups.push({
-      id: item.id,
-      name: item.name,
-      path: item.path,
-      kind: 'workspace',
-      chats,
-      folder: folder !== item.name ? folder : undefined,
-    });
-  }
-  if (archived.length)
-    groups.push({
-      id: 'archived',
-      name: t('Archived'),
-      path: t('Archived chats. Sending a prompt in one brings it back.'),
-      kind: 'archived',
-      chats: archived,
-    });
-  return groups;
-});
-/** Groups start open, except Archived, which starts closed: its id in the set means open instead. */
-function groupOpen(id: string): boolean {
-  if (searchMatches.value) return true;
-  return id === 'archived' ? collapsedGroups.value.has(id) : !collapsedGroups.value.has(id);
-}
+const {
+  chatSearch, chatGroups, groupActivity, folderName, groupOpen, toggleGroup,
+  moveMenu, menuPoint, openChatMenuAt, openChatMenuFrom, chatMenuKey,
+  draggedChat, dropTarget, dragOverGroup, dropOnGroup, startChatDrag, endChatDrag,
+} = useChatSidebar(state, recentWorkspaces, scratchIds, moveChat, perform);
 async function archiveChat(entry: Chat) {
   moveMenu.value = '';
   await rpc('chat.archive', { chatId: entry.id, archived: !entry.archivedAt });
@@ -502,51 +416,6 @@ async function archiveChat(entry: Chat) {
 async function pinChat(entry: Chat) {
   await rpc('chat.pin', { chatId: entry.id, pinned: !entry.pinned });
   await refresh();
-}
-const moveMenu = ref('');
-/** Where a right-click opened the chat menu; absent when it was opened from the dots button. */
-const menuPoint = ref<{ x: number; y: number }>();
-/** Places the chat menu at (x, y), or above `flipTop` when it would run off the bottom of the window. */
-function placeChatMenu(x: number, y: number, flipTop: number, entry: Chat, focusFirst = false) {
-  const width = 220;
-  const height = 220 + recentWorkspaces.value.length * 28;
-  menuPoint.value = {
-    x: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
-    y: y + height > window.innerHeight ? Math.max(8, flipTop - height) : y,
-  };
-  moveMenu.value = entry.id;
-  if (focusFirst)
-    void nextTick(() =>
-      document.querySelector<HTMLButtonElement>('.chat-menu button:not(:disabled)')?.focus(),
-    );
-}
-function openChatMenuAt(event: MouseEvent, entry: Chat) {
-  placeChatMenu(event.clientX, event.clientY, event.clientY, entry);
-}
-/**
- * The dots button: toggles the menu beside the button, opening to the right like the right-click menu.
- * Keyboard activation (detail 0) focuses the first item.
- */
-function openChatMenuFrom(event: MouseEvent, entry: Chat) {
-  if (moveMenu.value === entry.id) {
-    moveMenu.value = '';
-    return;
-  }
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  placeChatMenu(rect.right + 4, rect.top, rect.bottom, entry, event.detail === 0);
-}
-function chatMenuKey(event: KeyboardEvent) {
-  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-  event.preventDefault();
-  // Stay inside the (sub)menu that has focus, and skip items of a closed submenu.
-  const menu =
-    (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[role="menu"]') ??
-    (event.currentTarget as HTMLElement);
-  const items = [...menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].filter(
-    (item) => item.closest('[role="menu"]') === menu && item.offsetParent !== null,
-  );
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
 }
 /** Saves a chat's conversation (your prompts and the agent's replies) as a Markdown file. */
 function exportChat(entry: Chat) {
@@ -567,8 +436,6 @@ function exportChat(entry: Chat) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 2000);
 }
-const draggedChat = ref('');
-const dropTarget = ref('');
 async function moveChat(chatToMove: string, target: string) {
   moveMenu.value = '';
   const entry = state.value.chats.find((item) => item.id === chatToMove);
@@ -579,25 +446,6 @@ async function moveChat(chatToMove: string, target: string) {
     const moved = state.value.chats.find((item) => item.id === chatToMove);
     if (moved) await selectChat(moved);
   }
-}
-function dragOverGroup(event: DragEvent, groupId: string, kind: string) {
-  if (!draggedChat.value || kind !== 'workspace') return;
-  event.preventDefault();
-  dropTarget.value = groupId;
-}
-function dropOnGroup(groupId: string, kind: string) {
-  const dragged = draggedChat.value;
-  draggedChat.value = '';
-  dropTarget.value = '';
-  if (dragged && kind === 'workspace') void perform(() => moveChat(dragged, groupId));
-}
-function startChatDrag(event: DragEvent, entry: Chat) {
-  draggedChat.value = entry.id;
-  event.dataTransfer?.setData('text/plain', entry.title);
-}
-function endChatDrag() {
-  draggedChat.value = '';
-  dropTarget.value = '';
 }
 /** A wrapped-up guided-mode session is read-only: the report is its last turn. */
 const wrappedUp = computed(() => Boolean(chat.value?.wrappedUpAt));
@@ -713,106 +561,15 @@ async function resendEdit() {
   await selectChat(fork);
 }
 
-// ---- Find in chat (CSS Custom Highlight API, so the rendered messages are never modified) ----
-const findOpen = ref(false);
-const findText = ref('');
-const findIndex = ref(0);
-const findCount = ref(0);
-let findRanges: Range[] = [];
-const highlights = (globalThis.CSS as unknown as { highlights?: Map<string, unknown> } | undefined)
-  ?.highlights;
-function clearFindHighlights() {
-  highlights?.delete('chat-find');
-  highlights?.delete('chat-find-current');
-}
-function runFind(scroll = true) {
-  clearFindHighlights();
-  findRanges = [];
-  const root = conversation.value;
-  const query = findText.value.trim().toLowerCase();
-  if (!root || !query) {
-    findCount.value = 0;
-    return;
-  }
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (node.parentElement?.closest('script, style, .find-bar')) continue;
-    const text = (node.textContent ?? '').toLowerCase();
-    for (let index = text.indexOf(query); index >= 0; index = text.indexOf(query, index + query.length)) {
-      const range = new Range();
-      range.setStart(node, index);
-      range.setEnd(node, index + query.length);
-      findRanges.push(range);
-    }
-  }
-  findCount.value = findRanges.length;
-  if (findIndex.value >= findRanges.length) findIndex.value = 0;
-  if (findRanges.length && highlights) highlights.set('chat-find', new Highlight(...findRanges));
-  showFindHit(scroll);
-}
-function showFindHit(scroll = true) {
-  const range = findRanges[findIndex.value];
-  if (!range) return;
-  highlights?.set('chat-find-current', new Highlight(range));
-  if (scroll) range.startContainer.parentElement?.scrollIntoView({ block: 'center' });
-}
-function stepFind(direction: number) {
-  if (!findRanges.length) return;
-  findIndex.value = (findIndex.value + direction + findRanges.length) % findRanges.length;
-  showFindHit();
-}
-function openFind() {
-  if (!chat.value) return;
-  findOpen.value = true;
-  void nextTick(() => {
-    document.querySelector<HTMLInputElement>('.find-bar input')?.select();
-    runFind();
-  });
-}
-function closeFind() {
-  findOpen.value = false;
-  findRanges = [];
-  findCount.value = 0;
-  clearFindHighlights();
-}
-watch(findText, () => {
-  findIndex.value = 0;
-  runFind();
-});
-watch(chatId, closeFind);
+const { findOpen, findText, findIndex, findCount, stepFind, openFind, closeFind, refreshFind } = useChatFind(
+  conversation,
+  () => Boolean(chat.value),
+  chatId,
+);
 
-// ---- Tool groups: one quiet row, "✓ Worked for 12s · 6 steps" ----
-/** A command still running in this group, so it can be stopped without opening the group. */
-function groupCommandTerminal(tools: Message[]) {
-  for (const tool of tools) {
-    const terminal = commandTerminal(tool, terminals.value);
-    if (terminal) return terminal;
-  }
-  return undefined;
-}
 function stopTerminal(terminalId: string) {
   // A failure here almost always means the command just finished on its own.
   void rpc('terminal.stop', { terminalId }).catch(() => undefined);
-}
-function toolGroupState(tools: Message[]) {
-  const statuses = tools.map(
-    (tool) => (tool.metadata.tool as { status?: string } | undefined)?.status,
-  );
-  return {
-    running: statuses.includes('running'),
-    failed: statuses.filter((status) => status === 'failed').length,
-  };
-}
-function toolGroupLabel(tools: Message[]) {
-  const state = toolGroupState(tools);
-  const steps = t(tools.length === 1 ? '{count} step' : '{count} steps', { count: tools.length });
-  if (state.running) return `${t('Working…')} · ${steps}`;
-  const first = Date.parse(tools[0].createdAt);
-  const last = Date.parse(tools[tools.length - 1].createdAt);
-  const seconds = Math.max(1, Math.round((last - first) / 1000));
-  const took = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  const failed = state.failed ? ` · ${t('{count} failed', { count: state.failed })}` : '';
-  return `${t('Worked for {time}', { time: took })} · ${steps}${failed}`;
 }
 
 // ---- Mode switch on an empty chat (ModeSwitcher), so trying another mode doesn't need a new chat ----
@@ -873,26 +630,6 @@ const modeIcons = Object.fromEntries(
     return [mode.id, icon];
   }),
 );
-interface PaletteItem {
-  id: string;
-  label: string;
-  section: string;
-  hint?: string;
-  icon: unknown;
-  run: () => unknown;
-}
-const paletteOpen = ref(false);
-const paletteText = ref('');
-const paletteIndex = ref(0);
-function openPalette() {
-  paletteOpen.value = true;
-  paletteText.value = '';
-  paletteIndex.value = 0;
-  void nextTick(() => document.querySelector<HTMLInputElement>('.palette input')?.focus());
-}
-function closePalette() {
-  paletteOpen.value = false;
-}
 const paletteItems = computed<PaletteItem[]>(() => {
   const actions = t('Actions');
   // The user's own bindings, so the hints stay right after a shortcut is changed.
@@ -982,47 +719,10 @@ const paletteItems = computed<PaletteItem[]>(() => {
   for (const item of items) if (settingsIds.has(item.id)) item.section = t('Settings');
   return items;
 });
-/** Palette group order: Chats, Actions, Settings, then files and workspaces. */
-const paletteSectionOrder = computed(() => [t('Chats'), t('Actions'), t('Settings'), t('Files'), t('Workspaces')]);
-const paletteResults = computed(() => {
-  const words = paletteText.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = words.length
-    ? paletteItems.value.filter((item) => {
-        const text = `${item.label} ${item.section} ${item.hint ?? ''}`.toLowerCase();
-        return words.every((word) => text.includes(word));
-      })
-    : paletteItems.value.filter((item) => item.section !== t('Chats')).concat(
-        paletteItems.value.filter((item) => item.section === t('Chats')).slice(0, 8),
-      );
-  // Stable sort keeps each group's own order while the groups follow paletteSectionOrder.
-  const rank = (section: string) => {
-    const index = paletteSectionOrder.value.indexOf(section);
-    return index === -1 ? paletteSectionOrder.value.length : index;
-  };
-  return [...matches].sort((a, b) => rank(a.section) - rank(b.section)).slice(0, 60);
-});
-watch(paletteText, () => (paletteIndex.value = 0));
-function paletteKey(event: KeyboardEvent) {
-  const count = paletteResults.value.length;
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault();
-    if (count) paletteIndex.value = (paletteIndex.value + (event.key === 'ArrowDown' ? 1 : -1) + count) % count;
-    void nextTick(() => document.querySelector('.palette .active')?.scrollIntoView({ block: 'nearest' }));
-  } else if (event.key === 'Enter') {
-    event.preventDefault();
-    const item = paletteResults.value[paletteIndex.value];
-    if (item) runPaletteItem(item);
-  } else if (event.key === 'Escape') {
-    event.preventDefault();
-    closePalette();
-  }
-}
-function runPaletteItem(item: PaletteItem) {
-  closePalette();
-  void perform(async () => {
-    await item.run();
-  });
-}
+const {
+  paletteOpen, paletteText, paletteIndex, openPalette, closePalette,
+  paletteResults, paletteKey, runPaletteItem,
+} = useCommandPalette(paletteItems, perform);
 
 /** Tokens and cost of one prompt, for the label on its message. */
 function runUsageLabel(runId: string): string {
@@ -1050,21 +750,14 @@ const chatProvider = computed(() =>
     ? allProviders.value.find((provider) => provider.id === chat.value!.providerId)
     : undefined,
 );
-/** Second-opinion sub-chats of the open chat, with their latest status. */
-const chatReviews = computed(() =>
-  chat.value
-    ? state.value.chats
-        .filter((item) => item.reviewOf?.chatId === chat.value!.id)
-        .map((review) => {
-          const run = state.value.runs.filter((item) => item.chatId === review.id).at(-1);
-          const answer = state.value.messages
-            .filter((message) => message.chatId === review.id && message.role === 'assistant' && message.content.trim())
-            .at(-1);
-          const verdict = /Verdict:\s*([^\n]+)/i.exec(answer?.content ?? '')?.[1]?.trim();
-          return { chat: review, run, verdict };
-        })
-    : [],
-);
+const {
+  chatReviews, activeReview, openReviews, shownReview,
+  openReviewTab, closeReviewTab, deleteReview, startReview, askAboutReview,
+} = useChatReviews(state, chatId, {
+  refresh,
+  selectFileTab,
+  openReviewsPanel: () => openSideTab('reviews'),
+});
 /** The comparison the open chat is part of, newest first. */
 const chatComparison = computed(() => {
   if (!chat.value) return undefined;
@@ -1086,39 +779,6 @@ function rewindable(message: Message): boolean {
       !runs.value.find((run) => run.id === message.runId)?.forkedFrom,
   );
 }
-type ModelChoice = { providerId: string; model: string; effort?: string; note?: string };
-/** Second opinions open as their own center tabs, next to the chat, without leaving it. */
-const reviewTabs = ref<string[]>([]);
-const activeReview = ref('');
-watch(chatId, () => {
-  reviewTabs.value = [];
-  activeReview.value = '';
-});
-const openReviews = computed(() =>
-  reviewTabs.value.flatMap((id) => chatReviews.value.filter((item) => item.chat.id === id)),
-);
-const shownReview = computed(() => openReviews.value.find((item) => item.chat.id === activeReview.value));
-function openReviewTab(review: Chat) {
-  selectFileTab();
-  if (!reviewTabs.value.includes(review.id)) reviewTabs.value.push(review.id);
-  activeReview.value = review.id;
-}
-function closeReviewTab(id: string) {
-  reviewTabs.value = reviewTabs.value.filter((item) => item !== id);
-  if (activeReview.value === id) activeReview.value = '';
-}
-async function deleteReview(review: Chat) {
-  await rpc('chat.delete', { chatId: review.id });
-  closeReviewTab(review.id);
-  await refresh();
-}
-async function startReview(runId: string, pick: ModelChoice) {
-  const { note, ...choice } = pick;
-  const review = await rpc<Chat>('review.start', { runId, ...choice, focus: note || undefined });
-  await refresh();
-  openSideTab('reviews');
-  openReviewTab(review);
-}
 async function rerunWith(runId: string, pick: ModelChoice) {
   if (wrappedUp.value) return;
   const result = await rpc<{ chat: Chat; comparison: { id: string } }>('run.rerun', { runId, ...pick });
@@ -1136,15 +796,6 @@ async function continueWith(pick: ModelChoice) {
 async function pickerSaved() {
   if (chat.value?.providerId && chat.value.mode !== 'review' && !chat.value.rerunOf)
     await rpc('chat.provider', { chatId: chat.value.id, providerId: null });
-  await refresh();
-}
-async function askAboutReview(reviewId: string) {
-  if (wrappedUp.value) return;
-  if (!chat.value) return;
-  await rpc('run.submit', {
-    chatId: chat.value.id,
-    prompt: `Read second opinion ${reviewId} with the second_opinions tool. Check each finding against the code, fix the ones that hold up, and tell me which ones you rejected and why.`,
-  });
   await refresh();
 }
 const contextPanel = ref<{ load: () => Promise<void> }>();
@@ -1177,52 +828,15 @@ async function applyRewind() {
   await loadFiles();
 }
 
-/** The chat whose hand-off dialog is open, if any, and the mode preselected in it. */
-const handOffChat = ref<Chat>();
-const handOffMode = ref<Exclude<ChatMode, 'review'>>();
-watch(handOffChat, (value) => value || (handOffMode.value = undefined));
-function openHandOff(target: Chat) {
-  moveMenu.value = '';
-  handOffChat.value = target;
-}
-/** The in-chat line for a mode switch, e.g. "Switched from a normal chat to Debug mode". */
-function modeSwitchLabel(value: unknown): string {
-  const { from, to } = value as { from: string; to: string };
-  return t('Switched from {from} to {to}', { from: t(from), to: t(to) });
-}
-const handOffContextMarker = '\n\nContext from the user for this hand-off:\n';
-/** The context typed for a mode switch. Older switches only have it inside the hand-off prompt. */
-function modeSwitchContext(message: { content: string; metadata: Record<string, unknown> }): string {
-  const stored = (message.metadata.modeSwitch as { context?: unknown }).context;
-  if (typeof stored === 'string') return stored;
-  const at = message.content.indexOf(handOffContextMarker);
-  return at < 0 ? '' : message.content.slice(at + handOffContextMarker.length).trim();
-}
-/** The composer's mode chip: an empty chat just takes the mode; otherwise confirm (with context) in the hand-off dialog. */
-async function switchMode(mode: Exclude<ChatMode, 'review'>) {
-  if (!chat.value) return;
-  if (!messages.value.length) return setChatMode(mode);
-  handOffMode.value = mode;
-  handOffChat.value = chat.value;
-}
-/** Switches this chat to the chosen mode in place and continues it there. */
-async function handOff(choice: { mode: ChatMode; context: string }) {
-  const source = handOffChat.value;
-  if (!source) return;
-  try {
-    await rpc<Chat>('chat.handOff', {
-      chatId: source.id,
-      mode: choice.mode,
-      context: choice.context || undefined,
-    });
-    handOffChat.value = undefined;
-    await refresh();
-    if (chat.value?.id !== source.id) await selectChat(source);
-  } catch (error) {
-    handOffChat.value = undefined;
-    throw error;
-  }
-}
+const {
+  handOffChat, handOffMode, openHandOff, modeSwitchLabel, modeSwitchContext, switchMode, handOff,
+} = useModeHandoff(chat, {
+  hasMessages: () => messages.value.length > 0,
+  setChatMode,
+  closeMenu: () => { moveMenu.value = ''; },
+  refresh,
+  selectChat,
+});
 
 async function forkChat(runId: string) {
   if (!chat.value) return;
@@ -1233,26 +847,6 @@ async function forkChat(runId: string) {
 function runBusy(runId: string): boolean {
   const status = state.value.runs.find((run) => run.id === runId)?.status ?? '';
   return ['queued', 'running', 'paused', 'awaiting_approval'].includes(status);
-}
-function loadCollapsed(): Set<string> {
-  try {
-    const saved = localStorage.getItem('basedcode.collapsedGroups') ?? '[]';
-    return new Set(JSON.parse(saved) as string[]);
-  } catch {
-    return new Set();
-  }
-}
-const collapsedGroups = ref(loadCollapsed());
-function toggleGroup(id: string) {
-  const next = new Set(collapsedGroups.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  collapsedGroups.value = next;
-  try {
-    localStorage.setItem('basedcode.collapsedGroups', JSON.stringify([...next]));
-  } catch {
-    // Collapsing still works for this session without storage.
-  }
 }
 function chatBusy(id: string): boolean {
   return state.value.runs.some(
@@ -1375,7 +969,7 @@ const thisChatUsage = computed(() => chatUsage(runs.value));
 watch(
   () => [messages.value.length, messages.value.at(-1)?.content] as const,
   () => {
-    if (findOpen.value && findText.value.trim()) void nextTick(() => runFind(false));
+    refreshFind();
   },
 );
 /** Usage windows of the subscription provider the next (or running) prompt uses. */
@@ -1500,131 +1094,16 @@ function compactionSummary(compaction: unknown): string {
   const summary = (compaction as { summary?: unknown } | null)?.summary;
   return typeof summary === 'string' ? summary : '';
 }
-/** Use workspace-relative paths for local diagnostics and full paths for external files. */
-function diagnosticPath(uri: string): string {
-  const path = decodeURIComponent(uri.replace(/^file:\/+/, '')).replaceAll('\\', '/');
-  const root = workspace.value?.path.replaceAll('\\', '/').replace(/\/$/, '');
-  return root && path.toLowerCase().startsWith(`${root.toLowerCase()}/`)
-    ? path.slice(root.length + 1)
-    : path;
-}
-const diagnosticList = computed(() =>
-  state.value.diagnostics
-    .filter((item) => insideWorkspace(item.uri))
-    .map((item) => ({
-      ...item,
-      path: diagnosticPath(item.uri),
-      level: (item.severity ?? 1) === 1 ? 'error' : item.severity === 2 ? 'warning' : 'info',
-    }))
-    .sort(
-      (a, b) =>
-        (a.severity ?? 1) - (b.severity ?? 1) ||
-        a.path.localeCompare(b.path) ||
-        a.range.start.line - b.range.start.line,
-    ),
-);
+const {
+  diagnosticList, insideWorkspace, diagnosticSnippet, openDiagnosticInEditor,
+  scanningDiagnostics, scanDiagnostics, refreshSnippets,
+} = useWorkspaceDiagnostics(state, workspace, workspaceId, showDiagnostics);
 function openDiagnostics() {
   activeReview.value = '';
   showDiagnostics.value = true;
   showActions.value = false;
   preview.value = undefined;
-  snippetSources.value = new Map();
-  void loadSnippetSources();
-}
-/** Diagnostics that point inside the open workspace; only these get snippets and an open-in-editor button. */
-const insideWorkspace = (uri: string) => {
-  const root = workspace.value?.path.replaceAll('\\', '/').replace(/\/$/, '').toLowerCase();
-  return (
-    !!root &&
-    decodeURIComponent(uri.replace(/^file:\/+/, ''))
-      .replaceAll('\\', '/')
-      .toLowerCase()
-      .startsWith(`${root}/`)
-  );
-};
-/** File lines by workspace path, for snippets; `null` while loading or when the file cannot be read as text. */
-const snippetSources = ref(new Map<string, string[] | null>());
-async function loadSnippetSources() {
-  const target = workspaceId.value;
-  const paths = [
-    ...new Set(
-      diagnosticList.value.filter((item) => insideWorkspace(item.uri)).map((item) => item.path),
-    ),
-  ].filter((path) => !snippetSources.value.has(path));
-  for (const path of paths) snippetSources.value.set(path, null);
-  await Promise.all(
-    paths.map(async (path) => {
-      try {
-        const result = await rpc<{ content: string; binary: boolean }>('files.snippet', {
-          workspaceId: target,
-          path,
-        });
-        if (workspaceId.value === target && !result.binary)
-          snippetSources.value.set(path, result.content.split(/\r?\n/));
-      } catch {
-        /* No snippet; the card still shows the message. */
-      }
-    }),
-  );
-  snippetSources.value = new Map(snippetSources.value);
-}
-watch(workspaceId, () => {
-  snippetSources.value = new Map();
-  if (showDiagnostics.value) void loadSnippetSources();
-});
-watch(
-  () => [showDiagnostics.value, state.value.diagnostics] as const,
-  ([open]) => {
-    if (open) void loadSnippetSources();
-  },
-);
-function highlightLine(code: string, path: string): string {
-  const language = path.split('.').at(-1)?.toLowerCase() ?? '';
-  const alias =
-    (
-      {
-        vue: 'xml',
-        mjs: 'javascript',
-        cjs: 'javascript',
-        mts: 'typescript',
-        cts: 'typescript',
-      } as Record<string, string>
-    )[language] ?? language;
-  return hljs.getLanguage(alias)
-    ? hljs.highlight(code, { language: alias, ignoreIllegals: true }).value
-    : hljs.highlightAuto(code).value;
-}
-/** Two lines of context around the reported range (at most six lines of the range itself), highlighted line by line. */
-function diagnosticSnippet(item: {
-  path: string;
-  range: { start: { line: number }; end: { line: number } };
-}) {
-  const lines = snippetSources.value.get(item.path);
-  if (!lines) return [];
-  const from = Math.max(0, item.range.start.line - 2);
-  const to = Math.min(
-    lines.length - 1,
-    Math.min(item.range.end.line, item.range.start.line + 5) + 2,
-  );
-  return lines.slice(from, to + 1).map((code, offset) => {
-    const number = from + offset;
-    return {
-      number: number + 1,
-      html: highlightLine(code.slice(0, 400), item.path) || ' ',
-      hit: number >= item.range.start.line && number <= item.range.end.line,
-    };
-  });
-}
-function openDiagnosticInEditor(item: {
-  path: string;
-  range: { start: { line: number; character: number } };
-}) {
-  return rpc('files.openExternal', {
-    workspaceId: workspaceId.value,
-    path: item.path,
-    line: item.range.start.line + 1,
-    column: item.range.start.character + 1,
-  });
+  refreshSnippets();
 }
 let removeAntics: (() => void) | undefined;
 onMounted(() => (removeAntics = installAntics()));
@@ -1685,24 +1164,6 @@ async function fixAllDiagnostics() {
   composer.value = `Fix these ${lines.length} problems reported by language servers:\n\n${lines.join('\n')}`;
   showDiagnostics.value = false;
   await send();
-}
-// Scan the whole workspace for problems whenever one is opened, so the Diagnostics page is filled without opening files.
-watch(
-  workspaceId,
-  (id) => {
-    if (id) void rpc('language.scan', { workspaceId: id }).catch(() => undefined);
-  },
-  { immediate: true },
-);
-const scanningDiagnostics = ref(false);
-async function scanDiagnostics() {
-  if (!workspaceId.value || scanningDiagnostics.value) return;
-  scanningDiagnostics.value = true;
-  try {
-    await rpc('language.scan', { workspaceId: workspaceId.value, wait: true });
-  } finally {
-    scanningDiagnostics.value = false;
-  }
 }
 const currentDiagnostics = computed(() =>
   state.value.diagnostics.filter(
@@ -1872,141 +1333,11 @@ async function openFolder() {
  * Sends the composer. While a prompt is working, the default is to steer it (deliver the message mid-run) when its
  * provider can take that, and to queue a new prompt otherwise; `queue` forces a new queued prompt.
  */
-const commandHelp = ref(false);
-const skillSlashCommands = ref<{ name: string; description: string; scope?: 'workspace' | 'global' }[]>([]);
-const skillTaskParam: SlashCommandParam = {
-  name: 'task',
-  description: 'What the skill should do. Defaults to explaining the skill.',
-  optional: true,
-  rest: true,
-};
-const allSlashCommands = computed<SlashCommandInfo[]>(() => [
-  ...slashCommands,
-  // A skill named like a built-in command is still reachable as @name.
-  ...skillSlashCommands.value
-    .filter((skill) => !slashCommands.some((command) => command.name === skill.name))
-    .map(({ name, description }) => ({ name, description, params: [skillTaskParam] })),
-]);
-/** Caret offset in the composer, so an @skill mention can be completed anywhere in the message. */
-const composerCaret = ref(0);
-function trackCaret(event: Event) {
-  if (event.target instanceof HTMLTextAreaElement) composerCaret.value = event.target.selectionStart;
-}
-const mentionIndex = ref(0);
-const mentionDismissed = ref(false);
-const skillMention = computed(() => {
-  if (mentionDismissed.value) return undefined;
-  const before = composer.value.slice(0, composerCaret.value);
-  const match = /(^|\s)@([a-z0-9-]*)$/.exec(before);
-  if (!match) return undefined;
-  const query = match[2];
-  const skills = skillSlashCommands.value.filter((skill) => skill.name.startsWith(query));
-  return { query, start: before.length - query.length - 1, skills };
-});
-function chooseMention(name: string) {
-  const mention = skillMention.value;
-  if (!mention) return;
-  const input = composerBox.value?.querySelector('textarea');
-  const inserted = `@${name} `;
-  composer.value = composer.value.slice(0, mention.start) + inserted + composer.value.slice(composerCaret.value).replace(/^[a-z0-9-]*\s?/, '');
-  const caret = mention.start + inserted.length;
-  composerCaret.value = caret;
-  nextTick(() => {
-    input?.focus();
-    input?.setSelectionRange(caret, caret);
-  });
-}
-/**
- * While arguments are being typed after a known command ("/skill code-r"), its signature
- * with the parameter under the caret picked out, so nobody has to remember the order.
- */
-const commandArgHint = computed(() => {
-  const match = /^\/([a-z0-9-]+)\s([\s\S]*)$/.exec(composer.value.trimStart());
-  if (!match) return undefined;
-  const command = allSlashCommands.value.find((item) => item.name === match[1]);
-  if (!command) return undefined;
-  const params = command.params ?? [];
-  const args = match[2].trimStart();
-  const words = args ? args.trimEnd().split(/\s+/) : [];
-  const finished = args ? args.split(/\s+/).length - (/\s$/.test(args) ? 0 : 1) : 0;
-  const last = params.length - 1;
-  // A rest parameter soaks up every word after it; past the last plain one there is nothing left to fill.
-  const index = !params.length ? -1 : finished > last ? (params[last].rest ? last : -1) : finished;
-  // What each parameter parsed to so far, plus words no parameter takes.
-  const values = params.map((param, i) =>
-    param.rest && i === last ? words.slice(i).join(' ') : (words[i] ?? ''),
-  );
-  const extra = params.at(-1)?.rest ? [] : words.slice(params.length);
-  const missing = params.some((param, i) => !param.optional && !values[i]);
-  return { name: command.name, command, params, index, current: params[index], values, extra, missing };
-});
-/** Splits a command name into the part the user typed and the rest, for highlighting the match. */
-const commandQuery = computed(() => {
-  const input = composer.value.trimStart();
-  return input.startsWith('/') && !/\s/.test(input) ? input.slice(1) : '';
-});
-const unknownCommand = computed(() => {
-  const typed = /^\/([a-z0-9-]+)\s/.exec(composer.value.trimStart())?.[1];
-  if (typed && !allSlashCommands.value.some((item) => item.name === typed)) return typed;
-  const query = commandQuery.value;
-  return query && !commandHelp.value && !commandDismissed.value && !commandSuggestions.value.length
-    ? query
-    : '';
-});
-const commandIndex = ref(0);
-const commandDismissed = ref(false);
-const commandList = ref<HTMLElement>();
-async function loadSkillCommands() {
-  const id = workspaceId.value;
-  if (!id) { skillSlashCommands.value = []; return; }
-  const result = await rpc<{ name: string; description: string }[]>('skills.commands', { workspaceId: id });
-  if (workspaceId.value === id) skillSlashCommands.value = result;
-}
-watch(workspaceId, () => { skillSlashCommands.value = []; void loadSkillCommands().catch(report); }, { immediate: true });
-watch(composer, (value, previous) => {
-  commandIndex.value = 0;
-  commandDismissed.value = false;
-  mentionIndex.value = 0;
-  mentionDismissed.value = false;
-  const startsCommand = value.trimStart().startsWith('/') && !previous.trimStart().startsWith('/');
-  const addsMention = value.split('@').length > previous.split('@').length;
-  if (startsCommand || addsMention) void loadSkillCommands().catch(report);
-});
-const visibleCommands = computed(() => commandDismissed.value ? [] : commandHelp.value ? allSlashCommands.value : commandSuggestions.value);
-function chooseCommand(name: string) {
-  const input = commandList.value?.parentElement?.parentElement?.querySelector('textarea');
-  composer.value = '/' + name + ' ';
-  commandHelp.value = false;
-  nextTick(() => input?.focus());
-}
-function commandKeydown(event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-  const mentions = !visibleCommands.value.length ? skillMention.value?.skills ?? [] : [];
-  if (mentions.length && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === 'Escape') mentionDismissed.value = true;
-    else if (event.key === 'Enter' || event.key === 'Tab') chooseMention(mentions[mentionIndex.value % mentions.length].name);
-    else mentionIndex.value = (mentionIndex.value + (event.key === 'ArrowDown' ? 1 : -1) + mentions.length) % mentions.length;
-    return;
-  }
-  if (!visibleCommands.value.length) return;
-  if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) return;
-  event.preventDefault();
-  event.stopPropagation();
-  if (event.key === 'Escape') { commandDismissed.value = true; commandHelp.value = false; return; }
-  if (event.key === 'Enter' || event.key === 'Tab') {
-    chooseCommand(visibleCommands.value[commandIndex.value % visibleCommands.value.length].name);
-    return;
-  }
-  commandIndex.value = (commandIndex.value + (event.key === 'ArrowDown' ? 1 : -1) + visibleCommands.value.length) % visibleCommands.value.length;
-  nextTick(() => commandList.value?.children[commandIndex.value]?.scrollIntoView({ block: 'nearest' }));
-}
-const commandSuggestions = computed(() => {
-  const input = composer.value.trimStart();
-  if (!input.startsWith('/') || /\s/.test(input)) return [];
-  return allSlashCommands.value.filter((command) => command.name.startsWith(input.slice(1)));
-});
+const {
+  commandHelp, allSlashCommands, trackCaret, mentionIndex, skillMention, chooseMention,
+  commandArgHint, commandQuery, unknownCommand, commandIndex, commandList,
+  loadSkillCommands, visibleCommands, chooseCommand, commandKeydown,
+} = useComposerCommands(composer, workspaceId, composerBox, report);
 /** The current chat, or an error for slash commands that need one. */
 function requireChat(): Chat {
   if (!chat.value) throw new Error(t('Open a chat first.'));
@@ -3997,11 +3328,11 @@ onBeforeUnmount(() => {
                   /><span>{{
                     toolGroupLabel(groupedTools)
                   }}</span><button
-                    v-if="groupCommandTerminal(groupedTools)"
+                    v-if="groupCommandTerminal(groupedTools, terminals)"
                     type="button"
                     class="text-button tool-group-stop"
                     :title="t('Stop this command')"
-                    @click.stop.prevent="stopTerminal(groupCommandTerminal(groupedTools)!.id)"
+                    @click.stop.prevent="stopTerminal(groupCommandTerminal(groupedTools, terminals)!.id)"
                   >
                     <Square :size="11" /> {{ t('Stop') }}
                   </button><ChevronRight

@@ -1,10 +1,7 @@
-import { createOpenAI } from '@ai-sdk/openai';
 import {
-  extractReasoningMiddleware,
   generateText,
   streamText,
   tool,
-  wrapLanguageModel,
   type JSONValue,
   type LanguageModel,
   type ModelMessage,
@@ -45,13 +42,13 @@ import {
   type RunStats,
   type Workspace,
 } from '../../shared/types.js';
-import { antigravityOptions, cliPath } from '../providers/cli.js';
-import { AgyError, antigravity } from 'eve-antigravity';
+import { cliPath } from '../providers/cli.js';
+import { AgyError } from 'eve-antigravity';
 import { CodexHome, codexConfig } from '../providers/codexHome.js';
 import { Credentials } from '../providers/credentials.js';
 import type { Limits } from '../providers/limits.js';
 import { estimateCost } from '../providers/pricing.js';
-import { reasoningFetch, withoutReasoning } from '../providers/reasoning.js';
+import { assertModelInstalled, createLocalModel } from '../providers/localModel.js';
 import { cleanOutput } from '../runtime/output.js';
 import { Processes } from '../runtime/processes.js';
 import { PromptTimeLimit } from '../runtime/promptTimeLimit.js';
@@ -78,6 +75,7 @@ import {
   imageTypes,
   isTextAttachment,
 } from './context.js';
+import { checkFailureReport, checkSummary, coverageWarningText, type CheckResult } from './checks.js';
 import {
   QuotaError,
   contextOverflowText,
@@ -495,29 +493,7 @@ export class Agent {
   }
 
   private async localModel(provider: ProviderConfig): Promise<LanguageModel> {
-    if (!provider.model)
-      throw new Error(`Choose a ${provider.kind} model with the model picker below the composer.`);
-    if (provider.kind === 'antigravity') {
-      const effort = provider.effort || undefined;
-      if (effort !== undefined && effort !== 'low' && effort !== 'medium' && effort !== 'high')
-        throw new Error('Antigravity reasoning effort must be low, medium or high.');
-      return antigravity(provider.model, {
-        ...antigravityOptions(this.store.global().antigravityPath),
-        effort,
-      });
-    }
-    const url = new URL(provider.endpoint);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-      throw new Error('Provider endpoint must be HTTP(S) without embedded credentials.');
-    const model = createOpenAI({
-      baseURL: provider.endpoint,
-      apiKey: (await this.credentials.get(provider.id)) ?? 'local',
-      fetch: provider.effort === reasoningOff ? withoutReasoning(provider.kind) : reasoningFetch,
-    }).chat(provider.model);
-    return wrapLanguageModel({
-      model,
-      middleware: extractReasoningMiddleware({ tagName: 'think', separator: '' }),
-    });
+    return createLocalModel(provider, this.credentials, this.store.global().antigravityPath);
   }
 
   /**
@@ -656,7 +632,7 @@ export class Agent {
       if (coverageWarnings.length)
         this.events.publish(
           'checkpoint-warning',
-          `Prompt revert cannot restore excluded, linked, or oversized paths: ${coverageWarnings.slice(0, 12).join(', ')}${coverageWarnings.length > 12 ? `, and ${coverageWarnings.length - 12} more` : ''}.`,
+          coverageWarningText(coverageWarnings),
           workspace.id,
           run.id,
         );
@@ -756,9 +732,7 @@ export class Agent {
                 );
               },
             );
-            if (provider.kind === 'codex' || provider.kind === 'claude')
-              await this.subscription(provider, workspace, run, signal, definitions, instructions);
-            else await this.local(provider, run, signal, definitions, instructions);
+            await this.runProvider(provider, workspace, run, signal, definitions, instructions);
             completed = true;
             finisher = provider;
             break;
@@ -843,13 +817,7 @@ export class Agent {
         effectiveFixFailedChecks(this.store.global(), workspace) &&
         checks.some((check) => check.status === 'failed')
       ) {
-        const failures = checks
-          .filter((check) => check.status === 'failed')
-          .map(
-            (check) =>
-              `## ${check.name} (${check.command}, exit ${check.exitCode})\n${check.output ?? ''}`,
-          )
-          .join('\n\n');
+        const failures = checkFailureReport(checks);
         this.store.message(
           run.chatId,
           run.id,
@@ -857,21 +825,12 @@ export class Agent {
           `Verification checks failed. Handing the failures back to the model for one fix-up round.\n\n${failures}`,
           { fixup: true },
         );
-        if (finisher.kind === 'codex' || finisher.kind === 'claude')
-          await this.subscription(finisher, workspace, run, signal, definitions, instructions);
-        else await this.local(finisher, run, signal, definitions, instructions);
+        await this.runProvider(finisher, workspace, run, signal, definitions, instructions);
         checks = await this.verify(workspace, run, signal);
       }
       signal.throwIfAborted();
       for (const check of checks) delete check.output;
-      const summary = checks.length
-        ? checks
-            .map(
-              (check) =>
-                `${check.status === 'passed' ? '✓' : check.status === 'failed' ? '✗' : '–'} ${check.name}: ${check.status}${check.exitCode !== undefined ? ` (exit ${check.exitCode})` : ''}`,
-            )
-            .join('\n')
-        : 'No verification checks are configured for this workspace.';
+      const summary = checkSummary(checks);
       const failed = checks.filter((check) => check.status === 'failed').length;
       this.store.message(
         run.chatId,
@@ -916,6 +875,20 @@ export class Agent {
       }
       this.events.publish('state');
     }
+  }
+
+  /** One provider attempt at the task: subscription CLIs run through their adapter, the rest through the local loop. */
+  private async runProvider(
+    provider: ProviderConfig,
+    workspace: Workspace,
+    run: Run,
+    signal: AbortSignal,
+    definitions: ToolDefinition[],
+    instructions: string,
+  ): Promise<void> {
+    if (provider.kind === 'codex' || provider.kind === 'claude')
+      await this.subscription(provider, workspace, run, signal, definitions, instructions);
+    else await this.local(provider, run, signal, definitions, instructions);
   }
 
   /**
@@ -1143,16 +1116,7 @@ export class Agent {
     workspace: Workspace,
     run: Run,
     signal: AbortSignal,
-  ): Promise<
-    {
-      name: string;
-      command: string;
-      status: 'passed' | 'failed' | 'skipped';
-      exitCode?: number;
-      terminalId?: string;
-      output?: string;
-    }[]
-  > {
+  ): Promise<CheckResult[]> {
     const checks = workspace.settings.checks.filter((check) => check.command.trim());
     if (!checks.length) return [];
     try {
@@ -1376,28 +1340,7 @@ export class Agent {
     instructions: string,
   ): Promise<void> {
     const model = await this.localModel(provider);
-    // Fail clearly when the configured model is not installed; the raw API answer is just "Not Found".
-    const apiKey = await this.credentials.get(provider.id);
-    const listing =
-      provider.kind === 'antigravity'
-        ? undefined
-        : await fetch(provider.endpoint.replace(/\/$/, '') + '/models', {
-            signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
-            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-          })
-            .then((response) =>
-              response.ok ? (response.json() as Promise<{ data?: { id: string }[] }>) : undefined,
-            )
-            .catch(() => {
-              throw new Error(
-                `${provider.kind} is not reachable at ${provider.endpoint}. Start it, or pick another model.`,
-              );
-            });
-    const installed = listing?.data?.map((model) => model.id);
-    if (installed && !installed.includes(provider.model))
-      throw new Error(
-        `Model "${provider.model}" is not installed in ${provider.kind}. Pick an installed model with the model picker.`,
-      );
+    await assertModelInstalled(provider, this.credentials, signal);
     const tools: ToolSet = Object.fromEntries(
       definitions.map((definition) => [
         definition.name,

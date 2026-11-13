@@ -63,6 +63,42 @@ export function commandTerminal(
   );
 }
 
+/** A command still running in this tool group, so it can be stopped without opening the group. */
+export function groupCommandTerminal(
+  tools: Message[],
+  terminals: TerminalInfo[] | undefined,
+): TerminalInfo | undefined {
+  for (const tool of tools) {
+    const terminal = commandTerminal(tool, terminals);
+    if (terminal) return terminal;
+  }
+  return undefined;
+}
+
+export function toolGroupState(tools: Message[]) {
+  const statuses = tools.map(
+    (tool) => (tool.metadata.tool as { status?: string } | undefined)?.status,
+  );
+  return {
+    running: statuses.includes('running'),
+    failed: statuses.filter((status) => status === 'failed').length,
+  };
+}
+
+/** One quiet row per tool group: "✓ Worked for 12s · 6 steps". */
+export function toolGroupLabel(tools: Message[]): string {
+  const state = toolGroupState(tools);
+  const steps = t(tools.length === 1 ? '{count} step' : '{count} steps', { count: tools.length });
+  if (state.running) return `${t('Working…')} · ${steps}`;
+
+  const first = Date.parse(tools[0].createdAt);
+  const last = Date.parse(tools[tools.length - 1].createdAt);
+  const seconds = Math.max(1, Math.round((last - first) / 1000));
+  const took = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const failed = state.failed ? ` · ${t('{count} failed', { count: state.failed })}` : '';
+  return `${t('Worked for {time}', { time: took })} · ${steps}${failed}`;
+}
+
 export function terminalState(info: TerminalInfo): string {
   if (info.status === 'running') return t('Running');
   return info.exitCode === undefined
