@@ -79,11 +79,14 @@ async function prune(directory, discard = false) {
       // Every Claude call supplies the user's CLI path; neither SDK's bundled CLI is used.
       const remove =
         discard ||
+        (basename(directory) === '@openai' && entry.name.startsWith('codex')) ||
         (basename(directory) === '@anthropic-ai' && entry.name.startsWith('claude-agent-sdk-')) ||
         (directory === ptyPrebuilds && entry.name !== `${process.platform}-${process.arch}`);
       await prune(path, remove);
       if (remove) await rm(path, { recursive: true });
-    } else if (discard || (junk.test(entry.name) && !legal.test(entry.name))) {
+    } else if (discard ||
+      (basename(directory) === 'claude-agent-sdk' && entry.name === 'cli.js') ||
+      (junk.test(entry.name) && !legal.test(entry.name))) {
       removedBytes += (await stat(path)).size;
       await rm(path, { force: true });
       pruned++;
@@ -95,7 +98,7 @@ console.info(
   `Pruned ${pruned} unused files (${(removedBytes / 1024 ** 2).toFixed(1)} MiB) from node_modules.`,
 );
 
-// Fail packaging if trimming loses a widget entry point or the bundled Codex launcher.
+// Fail packaging if trimming loses a widget entry point.
 for (const library of Object.values(widgetLibraries)) {
   const files = 'script' in library ? [library.script] : Object.values(library.imports);
   for (const file of files)
@@ -104,7 +107,8 @@ for (const library of Object.values(widgetLibraries)) {
       `Missing widget asset: ${library.package}/${file}`,
     );
 }
-createRequire(join(app, 'package.json')).resolve('@openai/codex/bin/codex.js');
+assert(!existsSync(join(app, 'node_modules/@openai/codex')), 'Bundled Codex CLI must not ship');
+assert(!existsSync(join(app, 'node_modules/@anthropic-ai/claude-agent-sdk/cli.js')), 'Bundled Claude CLI must not ship');
 
 // Runtimes: this Node.js binary, and the regular (non-SDK) NW.js build the dev tooling pins.
 await cp(process.execPath, join(stage, 'node.exe'));

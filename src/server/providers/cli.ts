@@ -1,27 +1,24 @@
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { AgyError, isAntigravitySignedIn, type AntigravitySettings } from 'eve-antigravity';
 import { promisify } from 'node:util';
 import { findExecutable } from '../runtime/processes.js';
 
-const require = createRequire(import.meta.url);
 const exec = promisify(execFile);
 
 /** The SDK uses plain spawn, which cannot launch Windows npm shims. */
 export function cliPath(kind: 'codex' | 'claude' | 'antigravity', override = ''): string {
-  // npm scripts put node_modules/.bin first on PATH; skip it so the user's installed CLI wins over the bundled dependency.
-  let path =
+  // npm scripts prepend project dependencies; only detect user-installed CLIs.
+  const path =
     override ||
     findExecutable(kind === 'antigravity' ? 'agy' : kind, (directory) =>
       /[\\/]node_modules[\\/]\.bin[\\/]?$/i.test(directory),
     );
-  if (!path && kind === 'codex') path = require.resolve('@openai/codex/bin/codex.js');
   if (!path)
     throw new Error(
-      `${kind === 'antigravity' ? 'Antigravity (agy)' : 'Claude Code'} was not found on PATH. Install it or set its executable path.`,
+      `${kind === 'antigravity' ? 'Antigravity (agy)' : kind === 'codex' ? 'Codex' : 'Claude Code'} was not found on PATH. Install it or set its executable path.`,
     );
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(path)) {
     if (kind === 'antigravity')
@@ -53,7 +50,7 @@ export function antigravityOptions(override = ''): AntigravitySettings & { runti
 
 export function execCli(path: string, args: string[], maxBuffer = 1_000_000) {
   return /\.[cm]?js$/i.test(path)
-    ? exec('node', [path, ...args], { timeout: 15_000, maxBuffer, windowsHide: true })
+    ? exec(process.execPath, [path, ...args], { timeout: 15_000, maxBuffer, windowsHide: true })
     : exec(path, args, { timeout: 15_000, maxBuffer, windowsHide: true });
 }
 

@@ -2,6 +2,11 @@ import type { Dictionary } from './types';
 
 /** Dutch UI translations, keyed by English source text. */
 const nl: Dictionary = {
+  'Update available': 'Update beschikbaar',
+  'Downloading update…': 'Update downloaden…',
+  'Download progress': 'Downloadvoortgang',
+  'Installing update and restarting…': 'Update installeren en opnieuw starten…',
+  'Later': 'Later',
   'Check for updates': 'Controleren op updates',
   'Built with': 'Gebouwd met',
   'Main Developer': 'Hoofdontwikkelaar',

@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { Coins, ExternalLink, Globe, LoaderCircle } from '../../icons';
 import { rpc } from '../../services/api';
+import { installUpdate, updating as installingUpdate } from '../../state/updates';
 import { t } from '../../theme/themes';
 import packageJson from '../../../../package.json';
 
@@ -10,7 +11,6 @@ const appIcon = new URL('../../assets/icon.png', import.meta.url).href;
 const appVersion = ref('');
 const checkingUpdate = ref(false);
 const updateAvailable = ref(false);
-const installingUpdate = ref(false);
 const updateStatus = ref('');
 
 rpc<{ current: string }>('update.check')
@@ -38,17 +38,6 @@ function updateMessage(info: { supported: boolean; available: boolean; latest?: 
   if (!info.supported) return t('Automatic updates are only available in the installed Windows app.');
   if (info.available) return t('Version {version} is available.', { version: info.latest ?? '' });
   return t('You are up to date.');
-}
-
-async function installUpdate() {
-  if (installingUpdate.value) return;
-  installingUpdate.value = true;
-  try {
-    await rpc('update.install');
-  } catch (error) {
-    updateStatus.value = error instanceof Error ? error.message : String(error);
-    installingUpdate.value = false;
-  }
 }
 
 const infoLinks = [

@@ -2,6 +2,26 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { newerVersion, Updates } from './updates.js';
 
+test('incomplete downloads report received bytes and unlock after failure', async (context) => {
+  const updates = new Updates(() => assert.fail('Incomplete downloads must not quit'));
+  Object.defineProperty(updates, 'supported', { value: true });
+  context.mock.method(updates, 'current', async () => '1.0.0');
+  context.mock.method(globalThis, 'fetch', async (url: string | URL) => {
+    if (String(url).includes('api.github.com')) return Response.json({
+      tag_name: 'v2.0.0', html_url: '', draft: false, prerelease: false,
+      assets: [{
+        name: 'BasedCode-Setup-2.0.0.exe', size: 9,
+        browser_download_url: 'https://github.com/Naamloos/BasedCode/releases/download/v2.0.0/BasedCode-Setup-2.0.0.exe',
+      }],
+    });
+    assert.equal(updates.status().phase, 'downloading');
+    return new Response(new Uint8Array([1, 2, 3, 4]));
+  });
+  await updates.check();
+  await assert.rejects(updates.install(), /incomplete/);
+  assert.deepEqual(updates.status(), { phase: 'idle', downloaded: 4, total: 9 });
+});
+
 test('newerVersion compares numeric parts and pre-releases', () => {
   assert.equal(newerVersion('0.2.0', '0.1.0'), true);
   assert.equal(newerVersion('1.10.0', '1.9.9'), true);

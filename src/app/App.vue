@@ -147,6 +147,7 @@ import {
 } from './utils/format';
 import FlameStrip from './components/common/FlameStrip.vue';
 import UpdateChip from './components/common/UpdateChip.vue';
+import packageJson from '../../package.json';
 import BasedAquarium from './components/common/BasedAquarium.vue';
 import ComposerInput from './components/chat/ComposerInput.vue';
 import { clearDraft, loadDraft, saveDraft } from './state/drafts';
@@ -2031,7 +2032,7 @@ onBeforeUnmount(() => {
           class="brand-icon"
           :src="appIcon"
           alt=""
-        ><strong>basedcode<span class="version">v0.1</span></strong>
+        ><strong>basedcode<span class="version">v{{ packageJson.version }}</span></strong>
       </div>
       <Teleport to="body">
         <div

@@ -1,46 +1,23 @@
 <script setup lang="ts">
-// Title-bar chip that appears when a newer installer is published on GitHub releases.
-// Hidden entirely in source checkouts, where the backend reports the updater as unsupported.
-import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { Download, LoaderCircle } from '../../icons';
-import { rpc } from '../../services/api';
+import { onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
+import { Download } from '../../icons';
 import { t } from '../../theme/themes';
+import {
+  checkUpdate, installUpdate, updateInfo as info, updating,
+  updateFailure as failure, updateProgress as progress, updateDialog as visible,
+} from '../../state/updates';
 
-interface UpdateInfo {
-  supported: boolean;
-  current: string;
-  latest?: string;
-  available: boolean;
-}
-
-const info = ref<UpdateInfo>();
-const installing = ref(false);
-const failure = ref('');
+const dialog = ref<HTMLDialogElement>();
 let timer: ReturnType<typeof setInterval> | undefined;
 
-async function check() {
-  try {
-    info.value = await rpc<UpdateInfo>('update.check');
-  } catch {
-    /* Offline or rate-limited: try again on the next interval. */
-  }
-}
-
-async function install() {
-  if (installing.value) return;
-  installing.value = true;
-  failure.value = '';
-  try {
-    await rpc('update.install');
-  } catch (error) {
-    installing.value = false;
-    failure.value = error instanceof Error ? error.message : String(error);
-  }
-}
+watchEffect(() => {
+  if (visible.value && !dialog.value?.open) dialog.value?.showModal();
+  else if (!visible.value && dialog.value?.open) dialog.value.close();
+});
 
 onMounted(() => {
-  void check();
-  timer = setInterval(() => void check(), 6 * 60 * 60 * 1000);
+  void checkUpdate().catch(() => {});
+  timer = setInterval(() => void checkUpdate().catch(() => {}), 6 * 60 * 60 * 1000);
 });
 onBeforeUnmount(() => clearInterval(timer));
 </script>
@@ -49,26 +26,41 @@ onBeforeUnmount(() => clearInterval(timer));
   <button
     v-if="info?.supported && info.available"
     class="usage-chip update-chip"
-    :disabled="installing"
-    :title="
-      failure ||
-        t('BasedCode {latest} is available (you have {current}). Click to install and restart.', {
-          latest: info.latest ?? '',
-          current: info.current,
-        })
-    "
-    @click="install"
+    @click="visible = true"
   >
-    <LoaderCircle
-      v-if="installing"
-      :size="13"
-      class="spin"
-    /><Download
-      v-else
-      :size="13"
-    />
-    <span>{{ installing ? t('Updating…') : t('Update') }}</span>
+    <Download :size="13" />
+    <span>{{ updating ? t('Updating…') : t('Update') }}</span>
   </button>
+  <Teleport to="body">
+    <dialog
+      ref="dialog"
+      class="small-modal update-dialog"
+      aria-labelledby="update-title"
+      :closedby="updating ? 'none' : 'closerequest'"
+      @cancel="updating ? $event.preventDefault() : (visible = false)"
+      @close="visible = false"
+    >
+      <h2 id="update-title">{{ updating ? t('Updating…') : t('Update available') }}</h2>
+      <p v-if="!updating">{{ t('Version {version} is available.', { version: info?.latest ?? '' }) }}</p>
+      <div v-else>
+        <p>{{ progress.phase === 'installing' ? t('Installing update and restarting…') : t('Downloading update…') }}</p>
+        <progress
+          :value="progress.total > 0 ? progress.downloaded : undefined"
+          :max="progress.total || 1"
+          :aria-label="t('Download progress')"
+        />
+        <p v-if="progress.total > 0" role="status">
+          {{ Math.min(100, Math.floor(progress.downloaded / progress.total * 100)) }}%
+          · {{ (progress.downloaded / 1024 / 1024).toFixed(1) }} / {{ (progress.total / 1024 / 1024).toFixed(1) }} MB
+        </p>
+      </div>
+      <p v-if="failure" role="alert">{{ failure }}</p>
+      <footer v-if="!updating" class="modal-footer">
+        <button class="secondary-button" autofocus @click="visible = false">{{ t('Later') }}</button>
+        <button class="primary-button" @click="installUpdate">{{ t('Install update and restart') }}</button>
+      </footer>
+    </dialog>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -78,12 +70,21 @@ onBeforeUnmount(() => clearInterval(timer));
   gap: 4px;
   color: var(--accent, currentColor);
 }
-.spin {
-  animation: update-spin 1s linear infinite;
+.update-dialog {
+  margin: auto;
+  color: var(--text);
 }
-@keyframes update-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.update-dialog:modal {
+  overscroll-behavior: contain;
+}
+.update-dialog::backdrop {
+  background: var(--scrim);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.update-dialog progress {
+  width: 100%;
+  margin-top: 12px;
+  accent-color: var(--accent);
 }
 </style>

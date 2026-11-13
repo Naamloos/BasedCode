@@ -3,7 +3,7 @@ import { createWriteStream } from 'node:fs';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 const repository = 'Naamloos/BasedCode';
@@ -53,6 +53,11 @@ export function newerVersion(candidate: string, current: string): boolean {
 export class Updates {
   private release?: Release;
   private installing = false;
+  private progress = { phase: 'idle' as 'idle' | 'downloading' | 'installing', downloaded: 0, total: 0 };
+
+  status() {
+    return { ...this.progress };
+  }
   readonly supported = process.platform === 'win32' && process.env.BASEDCODE_PACKAGED === '1';
 
   constructor(private readonly onQuit: () => void) {}
@@ -163,6 +168,7 @@ export class Updates {
     if (url.protocol !== 'https:' || url.hostname !== 'github.com')
       throw new Error('Unexpected installer download location.');
     this.installing = true;
+    this.progress = { phase: 'downloading', downloaded: 0, total: asset.size };
     try {
       const folder = join(tmpdir(), 'basedcode-update');
       await rm(folder, { recursive: true, force: true });
@@ -172,11 +178,18 @@ export class Updates {
       if (!response.ok || !response.body) throw new Error(`Download failed (${response.status}).`);
       await pipeline(
         Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+        new Transform({
+          transform: (chunk: Buffer, _encoding, callback) => {
+            this.progress.downloaded += chunk.length;
+            callback(null, chunk);
+          },
+        }),
         createWriteStream(installer),
       );
       const { size } = await stat(installer);
       if (asset.size && size !== asset.size)
         throw new Error('The installer download was incomplete. Try again.');
+      this.progress.phase = 'installing';
       // /RELAUNCH=1 makes the installer wait for this app to exit and reopen it when done.
       const args = ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH=1'];
       const installDir = process.env.BASEDCODE_INSTALL_DIR?.replace(/[\\/]+$/, '');
@@ -210,6 +223,7 @@ export class Updates {
       setTimeout(this.onQuit, 500);
     } catch (error) {
       this.installing = false;
+      this.progress.phase = 'idle';
       throw error;
     }
   }

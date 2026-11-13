@@ -518,6 +518,8 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
     }
     case "tools.catalog":
       return tools.catalog();
+    case "update.status":
+      return updates.status();
     case "update.check":
       return updates.check();
     case "update.install":
