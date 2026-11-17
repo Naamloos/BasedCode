@@ -154,7 +154,9 @@ import UpdateChip from './components/common/UpdateChip.vue';
 import packageJson from '../../package.json';
 import BasedAquarium from './components/common/BasedAquarium.vue';
 import ComposerInput from './components/chat/ComposerInput.vue';
+import FollowUpChips from './components/chat/FollowUpChips.vue';
 import { clearDraft, loadDraft, saveDraft } from './state/drafts';
+import { currentFollowUps, dismissFollowUps, dismissedFollowUps, type FollowUp } from './state/followUps';
 import WelcomeDialog from './components/settings/WelcomeDialog.vue';
 import {
   burstFrom,
@@ -903,6 +905,9 @@ const messageItems = computed(() => {
   for (const message of messages.value) {
     const previous = items.at(-1);
     const note = message.role === 'tool' ? toolNote(message) : undefined;
+    // Suggestions show as chips under the answer; only a failed call keeps its card.
+    if (toolName(message) === 'suggest_prompts' && (message.metadata.tool as { status?: string }).status !== 'failed')
+      continue;
     if (note) items.push({ message, note });
     else if (
       message.role === 'tool' &&
@@ -936,6 +941,54 @@ const activePlan = computed(() => {
   const steps = (latest?.metadata.tool as { args?: { steps?: unknown } } | undefined)?.args?.steps;
   return Array.isArray(steps) && steps.length ? (steps as PlanStep[]) : undefined;
 });
+const dismissedSuggestions = ref(dismissedFollowUps());
+/** Esc hides the composer ghost text for one suggestion set; the chips stay. */
+const ghostHidden = ref('');
+const followUps = computed(() =>
+  wrappedUp.value
+    ? undefined
+    : currentFollowUps(
+      state.value.messages.filter((message) => message.chatId === chatId.value),
+      runs.value,
+      dismissedSuggestions.value,
+    ),
+);
+/** The answer the chips sit under: the run's last visible assistant message, if it has one. */
+const followUpAnchor = computed(() => {
+  const set = followUps.value;
+  return set && messages.value.findLast((message) => message.runId === set.runId && message.role === 'assistant')?.id;
+});
+const ghostPrompt = computed(() =>
+  followUps.value && ghostHidden.value !== followUps.value.messageId
+    ? followUps.value.suggestions[0].prompt
+    : undefined,
+);
+function dismissSuggestions() {
+  if (followUps.value) dismissedSuggestions.value = dismissFollowUps(followUps.value.messageId);
+}
+async function draftPrompt(prompt: string) {
+  if (
+    composer.value.trim() &&
+    composer.value.trim() !== prompt &&
+    !(await confirmAction(
+      t('Replace your message?'),
+      t('The composer already has text. Replace it with the suggested prompt?'),
+      t('Replace'),
+    ))
+  )
+    return;
+  dismissSuggestions();
+  composer.value = prompt;
+  await nextTick();
+  focusComposer();
+  const field = composerBox.value?.querySelector('textarea');
+  field?.setSelectionRange(prompt.length, prompt.length);
+}
+async function chooseFollowUp(suggestion: FollowUp) {
+  if (suggestion.action === 'draft') return draftPrompt(suggestion.prompt);
+  dismissSuggestions();
+  await send('auto', suggestion.prompt);
+}
 /** Status bar summary of what the app is doing right now, across every chat. */
 const appStatus = computed<{ label: string; tone: 'live' | 'busy' | 'warn' | 'off' }>(() => {
   if (!connected.value) return { label: t('Disconnected'), tone: 'off' };
@@ -965,7 +1018,7 @@ const compacting = computed(
 /** Whether a message can be delivered to the working prompt now, rather than queued behind it. */
 const canSteer = computed(() => {
   const run = working.value;
-  const kind = run?.provider?.split(' / ')[0] as ProviderKind | undefined;
+  const kind = run?.providerKind;
   return Boolean(
     !compacting.value &&
     run &&
@@ -1386,9 +1439,10 @@ const localCommands: Partial<Record<string, (args: string) => unknown>> = {
   usage: () => openGlobalSettings('usage'),
   tools: () => openGlobalSettings('tools'),
 };
-async function send(mode: 'auto' | 'queue' = 'auto') {
-  if (!composer.value.trim() || !workspace.value || wrappedUp.value) return;
-  const command = parseSlashCommand(composer.value);
+/** `suggested` sends a follow-up chip's prompt as typed by the user, leaving the composer and attachments alone. */
+async function send(mode: 'auto' | 'queue' = 'auto', suggested?: string) {
+  if (!(suggested ?? composer.value).trim() || !workspace.value || wrappedUp.value) return;
+  const command = suggested === undefined ? parseSlashCommand(composer.value) : undefined;
   const local = command && localCommands[command.name];
   if (command && local) {
     const info = slashCommands.find((item) => item.name === command.name) as SlashCommandInfo | undefined;
@@ -1399,7 +1453,8 @@ async function send(mode: 'auto' | 'queue' = 'auto') {
     composer.value = '';
     return;
   }
-  if (uploading.value) throw new Error(t('Wait for attachments to finish uploading.'));
+  if (uploading.value && suggested === undefined)
+    throw new Error(t('Wait for attachments to finish uploading.'));
   // A local provider without a model cannot run; open the picker instead of sending a prompt that will fail.
   const first = enabledProviders.value[0];
   if (!first || (!first.model && first.kind !== 'claude' && first.kind !== 'codex')) {
@@ -1407,6 +1462,19 @@ async function send(mode: 'auto' | 'queue' = 'auto') {
     return;
   }
   if (!chat.value) await createChat();
+  if (suggested !== undefined) {
+    follow.value = true;
+    try {
+      await rpc('run.submit', { chatId: chatId.value, prompt: suggested, attachmentIds: [] });
+    } catch (failure) {
+      // The chips are gone by now; keep the prompt where the user can retry it.
+      if (!composer.value.trim()) composer.value = suggested;
+      throw failure;
+    }
+    burstFrom(sendButton.value, 70, 1.5);
+    await refresh();
+    return;
+  }
   const prompt = composer.value;
   const sent = pending.value;
   const attachmentIds = sent.flatMap((item) => (item.attachment ? [item.attachment.id] : []));
@@ -3536,6 +3604,12 @@ onBeforeUnmount(() => {
                   role="status"
                   aria-live="polite"
                 >{{ t('Thinking') }}…</span>
+                <FollowUpChips
+                  v-if="followUps && message.id === followUpAnchor"
+                  :key="followUps.messageId"
+                  :suggestions="followUps.suggestions"
+                  @choose="(suggestion) => perform(() => chooseFollowUp(suggestion))"
+                />
               </article>
               <figure
                 v-else-if="message.metadata.browserScreenshot"
@@ -3679,6 +3753,12 @@ onBeforeUnmount(() => {
                 </ModelPicker>
               </div>
             </template>
+            <FollowUpChips
+              v-if="followUps && !followUpAnchor"
+              :key="followUps.messageId"
+              :suggestions="followUps.suggestions"
+              @choose="(suggestion) => perform(() => chooseFollowUp(suggestion))"
+            />
           </div>
         </div>
         <BrowserPreview
@@ -3790,9 +3870,6 @@ onBeforeUnmount(() => {
               class="run-state-icon"
               :class="[runStatus[active.status].tone, { spin: runStatus[active.status].spin }]"
             /><strong>{{ t(runStatus[active.status].label) }}</strong><span class="muted">{{ active.provider }}</span><span
-              v-if="working && canSteer"
-              class="muted small"
-            >· {{ t('messages you send now steer this prompt') }}</span><span
               v-if="active.stats && tokensPerSecond(active.stats)"
               class="run-status-speed"
             >{{ active.stats.estimated ? '≈' : ''
@@ -4066,8 +4143,11 @@ onBeforeUnmount(() => {
                           : 'What should we work on?',
                 )
               "
+              :ghost="ghostPrompt"
               @submit="perform(() => send())"
               @queue="perform(() => send('queue'))"
+              @accept-ghost="ghostPrompt && perform(() => draftPrompt(ghostPrompt!))"
+              @dismiss-ghost="ghostHidden = followUps?.messageId ?? ''"
             />
             <div class="composer-footer">
               <button

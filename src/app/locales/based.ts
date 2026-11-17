@@ -207,6 +207,13 @@ const based: Dictionary = {
   'Claude Code reports its cost. Codex, OpenAI-compatible and Antigravity models use estimated API list prices from LiteLLM, even on a subscription. Local models are unpriced. Reverted prompts still count.': 'Claude Code reports the bill. Codex, OpenAI-compatible and Antigravity models get API-price estimates from LiteLLM, even with a subscription. Local models stay unpriced. Reverted prompts still count.',
   'Read the current windows from your Antigravity account (uses no quota)': 'Check your Antigravity windows. Zero quota spent.',
   'Uses the unofficial eve-antigravity adapter and your installed agy CLI. Native CLI tools are disabled; BasedCode executes tool calls. Images and binary files are not sent to the model.': 'Runs through the unofficial eve-antigravity adapter and your agy CLI. Native tools are off; BasedCode handles the tools. Images and binary files stay out of the model prompt.',
+  'Suggested follow-ups': 'Next moves',
+  'Sends now': 'Yeet it',
+  'Opens in composer': 'Cook it first',
+  'Suggested prompt: {prompt}. Press Tab to use it.': 'Next move: {prompt}. Smash Tab to cook it.',
+  'Replace your message?': 'Nuke your draft?',
+  'The composer already has text. Replace it with the suggested prompt?': "You've already got text cooking. Swap it for the suggested prompt?",
+  'Replace': 'Swap it',
 };
 
 export default based;

@@ -50,6 +50,27 @@ export function createVisualTools(
       },
     ),
     definition(
+      'suggest_prompts',
+      'Offer the user up to 3 follow-up prompts, shown as buttons under your answer once this turn ends; the first is also offered as Tab-completion in the empty composer. Nothing is sent unless the user clicks one. Use it only when the next step is clear. Labels are short and imperative ("Run the tests", not "Would you like me to..."). action "send" sends the prompt as-is on click: only for safe, obvious steps that need no more input. action "draft" puts it in the composer to edit first: for anything to review or fill in. Best first. Call once per turn; a later call replaces the earlier one.',
+      {
+        suggestions: z
+          .array(
+            z.object({
+              label: z.string().trim().min(1).max(60).describe('Button text.'),
+              prompt: z.string().trim().min(1).max(20_000).describe('The full prompt sent or drafted.'),
+              action: z.enum(['send', 'draft']),
+            }),
+          )
+          .min(1)
+          .max(3),
+      },
+      async ({ suggestions }) => {
+        if (new Set(suggestions.map((item) => item.label.toLowerCase())).size !== suggestions.length)
+          throw new Error('Each suggestion needs a different label.');
+        return { suggested: suggestions.length };
+      },
+    ),
+    definition(
       'render_ui',
       'Show a rich interactive component inline in the chat, built from HTML/CSS/JS. It renders in a sandboxed iframe with no network access (inline scripts, styles and data: images only). Buttons can queue a follow-up prompt for the user: add data-prompt="text" to any element, or call basedcode.prompt("text") from a click handler. Prompts are only sent after the user interacts with the component. Use for choices, previews, small dashboards or visual explanations, not for plain text answers.',
       {

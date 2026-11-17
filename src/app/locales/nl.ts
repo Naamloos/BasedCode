@@ -102,6 +102,13 @@ const nl: Dictionary = {
   'This chat is archived. Click to unarchive it.': 'Dit gesprek is gearchiveerd. Klik om het terug te zetten.',
   'Named this chat: {title}': 'Gesprek genoemd: {title}',
   'Updated the plan: {done} of {total} steps done': 'Plan bijgewerkt: {done} van {total} stappen klaar',
+  'Suggested follow-ups': 'Voorgestelde vervolgvragen',
+  'Sends now': 'Wordt direct verstuurd',
+  'Opens in composer': 'Opent in invoerveld',
+  'Suggested prompt: {prompt}. Press Tab to use it.': 'Voorgestelde prompt: {prompt}. Druk op Tab om hem te gebruiken.',
+  'Replace your message?': 'Je bericht vervangen?',
+  'The composer already has text. Replace it with the suggested prompt?': 'Het invoerveld bevat al tekst. Vervangen door de voorgestelde prompt?',
+  'Replace': 'Vervangen',
   'Forked from {title}. Click to open it.': 'Afgesplitst van {title}. Klik om het te openen.',
   'Chats forked from this one': 'Gesprekken die hiervan zijn afgesplitst',
   '{count} branch(es)': '{count} tak(ken)',
@@ -177,7 +184,7 @@ const nl: Dictionary = {
   // Browser preview
   'Agent browser': 'Browser van de agent', 'Live browser': 'Live browser', 'Browser session ended': 'Browsersessie beëindigd', 'Smaller preview': 'Kleinere voorvertoning', 'Larger preview': 'Grotere voorvertoning', 'Show preview': 'Voorvertoning tonen', 'Hide preview': 'Voorvertoning verbergen', 'Close browser preview': 'Browservoorvertoning sluiten', 'Agent browser live preview': 'Live voorvertoning van de browser van de agent',
   // Composer
-  'Stop': 'Stoppen', 'Stop this command': 'Deze opdracht stoppen', 'Queue': 'In wachtrij', 'Compact': 'Samenvatten', 'messages you send now steer this prompt': 'berichten die je nu stuurt, sturen deze prompt bij',
+  'Stop': 'Stoppen', 'Stop this command': 'Deze opdracht stoppen', 'Queue': 'In wachtrij', 'Compact': 'Samenvatten',
   'Queued prompts': 'Prompts in wachtrij', 'Remove from the queue': 'Uit de wachtrij verwijderen', 'Pasted image': 'Geplakte afbeelding', 'Uploading…': 'Uploaden…', 'Remove {name}': '{name} verwijderen',
   'What should we work on?': 'Waar gaan we aan werken?', 'Open a workspace to start a conversation': 'Open een werkruimte om een gesprek te beginnen',
   'Queue a prompt while compacting': 'Zet een prompt in de wachtrij tijdens het samenvatten', 'Queue the next prompt': 'Zet de volgende prompt in de wachtrij',

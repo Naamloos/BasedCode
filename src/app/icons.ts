@@ -97,6 +97,7 @@ export const PanelRightOpen = icon(Ph.PhSidebarSimple, 'regular', true);
 export const Paperclip = icon(Ph.PhPaperclip);
 export const Pause = icon(Ph.PhPause);
 export const Pencil = icon(Ph.PhPencilSimple);
+export const CornerDownLeft = icon(Ph.PhArrowElbowDownLeft);
 export const Pin = icon(Ph.PhPushPin);
 export const PinOff = icon(Ph.PhPushPinSlash);
 export const Play = icon(Ph.PhPlay);

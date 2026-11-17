@@ -712,6 +712,7 @@ export class Agent {
           );
         this.update(run, {
           provider: `${providerName(provider)} / ${provider.model || 'default'}`,
+          providerKind: provider.kind,
           providerIndex: index,
         });
         if (entry) {

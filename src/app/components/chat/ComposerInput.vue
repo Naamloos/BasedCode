@@ -11,8 +11,20 @@ const props = defineProps<{
   disabled: boolean;
   placeholder: string;
   commands?: readonly SlashCommandInfo[];
+  /** A suggested prompt shown as ghost text while the composer is empty and focused. */
+  ghost?: string;
 }>();
-const emit = defineEmits<{ submit: []; queue: [] }>();
+const emit = defineEmits<{ submit: []; queue: []; acceptGhost: []; dismissGhost: [] }>();
+const focused = ref(false);
+const showGhost = computed(() => Boolean(props.ghost && focused.value && !model.value && !props.disabled));
+// Tab only fills the composer (never sends) and only while the ghost shows; otherwise it moves focus as usual.
+function ghostKey(event: KeyboardEvent) {
+  if (!showGhost.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === 'Tab') emit('acceptGhost');
+  else emit('dismissGhost');
+}
 const textarea = ref<HTMLTextAreaElement>();
 const mirror = ref<HTMLElement>();
 const underlay = ref<HTMLElement>();
@@ -178,15 +190,30 @@ defineExpose({ focus: () => textarea.value?.focus(), element: textarea });
       v-model="model"
       autocomplete="off"
       :disabled="props.disabled"
-      :placeholder="props.placeholder"
+      :placeholder="showGhost ? '' : props.placeholder"
       rows="3"
       :aria-label="t('Message the coding agent')"
+      :aria-describedby="showGhost ? 'composer-ghost-hint' : undefined"
       spellcheck="true"
       @scroll="syncScroll"
-      @focus="updateCaret"
-      @blur="caret = -1"
+      @focus="updateCaret(); focused = true"
+      @blur="caret = -1; focused = false"
       @keydown.enter.exact.prevent="emit('submit')"
       @keydown.alt.enter.prevent="emit('queue')"
+      @keydown.tab.exact="ghostKey"
+      @keydown.esc="ghostKey"
     />
+    <div
+      v-if="showGhost"
+      class="composer-ghost"
+      aria-hidden="true"
+    >
+      <span class="composer-ghost-text">{{ props.ghost }}</span><kbd>Tab</kbd>
+    </div>
+    <span
+      v-if="showGhost"
+      id="composer-ghost-hint"
+      class="composer-ghost-hint"
+    >{{ t('Suggested prompt: {prompt}. Press Tab to use it.', { prompt: props.ghost ?? '' }) }}</span>
   </div>
 </template>

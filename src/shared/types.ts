@@ -551,6 +551,8 @@ export interface Run {
   prompt: string;
   status: RunStatus;
   provider?: string;
+  /** Kind of the active provider; `provider` is a display name and can't be parsed back reliably. */
+  providerKind?: ProviderKind;
   /** Position of the active provider in the workspace's enabled fallback list; above 0 means fallback is in use. */
   providerIndex?: number;
   stats?: RunStats;
