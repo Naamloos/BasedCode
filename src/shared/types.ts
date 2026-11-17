@@ -97,6 +97,8 @@ export interface GlobalSettings {
    * (load_tools/call_tool). Absent: on.
    */
   deferTools?: boolean;
+  /** Memories the agent saves for later chats. Absent: on. */
+  memory?: { enabled: boolean };
   /** About the user: personalizes the system prompt; the avatar is only shown in chat. */
   profile?: UserProfile;
 }
@@ -322,6 +324,45 @@ export interface Workspace {
   scratch?: boolean;
   /** Set when the user removed the workspace from BasedCode (its folder is untouched); opening the folder again restores it. */
   removedAt?: string;
+  /** Set for a Git worktree BasedCode created: the workspace it branches from and its branch. */
+  worktreeOf?: { workspaceId: string; branch: string };
+}
+
+/** A fact the agent or the user saved for later chats. Global ones apply everywhere, workspace ones only there. */
+export interface Memory {
+  id: string;
+  scope: "global" | "workspace";
+  /** Set when scope is 'workspace'. */
+  workspaceId?: string;
+  content: string;
+  source: "agent" | "user";
+  /** The chat that saved it, for agent memories. */
+  chatId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const artifactTypes = [
+  "text/markdown",
+  "text/html",
+  "text/plain",
+  "text/csv",
+  "application/json",
+  "image/svg+xml",
+] as const;
+export type ArtifactType = (typeof artifactTypes)[number];
+
+/** A document the agent keeps outside the workspace files, with every version it wrote. */
+export interface Artifact {
+  id: string;
+  workspaceId: string;
+  chatId: string;
+  title: string;
+  mediaType: ArtifactType;
+  versions: { content: string; createdAt: string; runId?: string; note?: string }[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
 }
 
 /** default: normal coding agent. Guided modes (duck, pair, archaeology, ...) are listed in shared/chatModes.ts. review: read-only second opinion on another chat's prompt. */
@@ -435,11 +476,29 @@ export interface LimitWindow {
   status?: "allowed" | "allowed_warning" | "rejected";
 }
 
+/** A usage reset the account holds (a Codex reset credit or a Claude limit-reset grant). */
+export interface LimitReset {
+  /** Provider id passed back to `limits.useReset`. Empty when Codex reports only a count and picks the credit itself. */
+  id: string;
+  label: string;
+  /** Resets left in this grant, when the provider reports it. */
+  left?: number;
+  expiresAt?: string;
+  /** False when the provider says it can only be used once a limit is reached. */
+  usableNow?: boolean;
+  /** Provider's reason the reset can't be used from here (for example `cli_version`), shown instead of hiding it. */
+  unavailableReason?: string;
+}
+
 /** Latest known usage windows for a subscription provider, and when and how they were learned. */
 export interface ProviderLimits {
   id: string;
   kind: ProviderKind;
   windows: LimitWindow[];
+  /** Usage resets the account can spend. Absent when the provider reported none or does not support them. */
+  resets?: LimitReset[];
+  /** True when the provider hides resets from BasedCode (Claude answers "surface"), so the UI can say where to look. */
+  resetsHidden?: boolean;
   plan?: string;
   updatedAt: string;
   source: string;

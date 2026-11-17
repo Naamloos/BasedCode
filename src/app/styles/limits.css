@@ -100,32 +100,109 @@
 .limit-windows p {
   margin: 2px 0 0;
 }
+/* Each window: one line (label, reset time, value) over a full-width bar, so narrow cards stay readable. */
+.limit-windows {
+  gap: 10px;
+}
 .limit-row {
-  display: grid;
-  grid-template-columns: 92px 1fr 44px;
-  align-items: center;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: var(--fs-xs);
+}
+.limit-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 .limit-label {
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 .limit-track {
-  height: 6px;
-  border-radius: 3px;
+  height: 4px;
+  border-radius: 2px;
   background: var(--surface-active);
   overflow: hidden;
 }
 .limit-value {
+  margin-inline-start: auto;
   font-family: var(--mono);
-  text-align: end;
   color: var(--text);
 }
 .limit-reset {
-  grid-column: 2 / 4;
-  margin-top: -4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+}
+.limit-windows .limit-meta,
+.limit-meta {
+  margin: 0;
   font-size: var(--fs-xs);
   color: var(--faint);
+}
+/* Usage resets: a static dot on the ring (no animation, so it also suits "effects off") and a list with Use buttons. */
+.limit-ring.has-resets {
+  position: relative;
+}
+.limit-ring.has-resets::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--surface-raised);
+}
+.limit-resets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  font-size: var(--fs-xs);
+}
+.limit-resets.urgent {
+  outline: 1px solid var(--accent);
+}
+.limit-resets-count {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.limit-resets-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+}
+.limit-resets-use {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.limit-resets-use:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.limit-resets-use:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.limit-popover .limit-resets {
+  margin-top: 12px;
 }
 
 .chat-select {

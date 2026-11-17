@@ -91,6 +91,7 @@ import { compactionPrompt, personalizedSystemPrompt, reviewPrompt, scratchPrompt
 import { envSecrets, findSecrets, isOutboundTool } from './secrets.js';
 import { secondOpinions } from '../tools/chatTools.js';
 import { deferTools, type OfferedTools } from '../tools/deferred.js';
+import { memoryPrompt } from './memory.js';
 import { codexDisabledFeatures, nativeApproval } from './providerPolicy.js';
 
 // Preserve imports used by integrations while keeping the implementation in focused modules.
@@ -658,11 +659,14 @@ export class Agent {
         throw new Error(
           "Enable at least one provider in app settings, or in this workspace's fallback order.",
         );
+      // Filled in below once guarded, so a script's tool calls pass the same guards as direct ones.
+      let scriptTools: ToolDefinition[] = [];
       const allTools = this.tools.definitions({
         workspace,
         run,
         signal,
         timeLimit,
+        scriptTools: () => scriptTools,
         // Snapshot before every call that can change files, so the run can be rewound to just before it.
         beforeTool: async (name, messageId) => {
           if (!checkpointStarted || !fileChangingTools.has(name)) return;
@@ -670,16 +674,14 @@ export class Agent {
         },
       });
       // Guard first, so budgets, loop detection and the secret guard also cover tools reached through call_tool.
-      const { offered: definitions, catalog } = this.offerTools(
-        this.guardTools(
-          reviewing ? allTools.filter((item) => readOnlyTools.has(item.name)) : allTools,
-          workspace,
-          run,
-          controller,
-        ),
-        runChat,
+      const guarded = this.guardTools(
+        reviewing ? allTools.filter((item) => readOnlyTools.has(item.name)) : allTools,
         workspace,
+        run,
+        controller,
       );
+      scriptTools = guarded;
+      const { offered: definitions, catalog } = this.offerTools(guarded, runChat, workspace);
       const projectFiles = await loadInstructions(workspace.path);
       if (projectFiles.length) {
         this.update(run, { instructionFiles: projectFiles.map((file) => file.label) });
@@ -980,6 +982,7 @@ export class Agent {
         ? []
         : secondOpinions(this.store, chatId).filter((item) => item.review);
     const files = projectFiles.map((file) => file.label).join(', ');
+    const memory = memoryPrompt(this.store, workspace.id);
     const parts: ({ label: string; text: string } | false)[] = [
       { label: 'BasedCode system prompt', text: personalizedSystemPrompt(this.store.global().profile) },
       Boolean(toolCatalog) && { label: 'Deferred tool catalog', text: `\n\n${toolCatalog}` },
@@ -990,6 +993,8 @@ export class Agent {
         label: 'Chat title note',
         text: `\n\nThis chat has no real title yet (it shows "${chat.title.slice(0, 80)}"). Call set_chat_title once, early, with a short title for it.`,
       },
+      chat.mode !== 'review' &&
+        Boolean(memory) && { label: 'Memory', text: memory },
       Boolean(workspace.settings.instructions?.trim()) && {
         label: 'Workspace instructions',
         text: `\n\n# Workspace instructions from the user\n${workspace.settings.instructions?.trim()}`,

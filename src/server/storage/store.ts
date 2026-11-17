@@ -5,10 +5,12 @@ import { randomUUID } from 'node:crypto';
 import type {
   Action,
   Approval,
+  Artifact,
   Attachment,
   Chat,
   Comparison,
   GlobalSettings,
+  Memory,
   Message,
   ProviderConfig,
   ProviderLimits,
@@ -136,6 +138,10 @@ export interface Records {
   attachment: Attachment;
   limits: ProviderLimits;
   comparison: Comparison;
+  memory: Memory;
+  artifact: Artifact;
+  /** Values run_script kept with store(), one record per chat. */
+  scriptStore: { id: string; values: Record<string, unknown> };
 }
 
 export class Store {

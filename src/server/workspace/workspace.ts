@@ -289,20 +289,25 @@ export async function gitStaged(
   return { files, prefix };
 }
 
+function assertBranchName(name: string): void {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(name) ||
+    name.startsWith('-') ||
+    name.includes('..') ||
+    name.endsWith('/') ||
+    name.endsWith('.') ||
+    name.endsWith('.lock')
+  )
+    throw new Error('Invalid branch name.');
+}
+
 /** Create or switch to a named local branch. No starting-point revision is accepted. */
 export async function gitBranch(
   workspace: Workspace,
   name: string,
   create: boolean,
 ): Promise<string> {
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(name) ||
-    name.startsWith('-') ||
-    name.includes('..') ||
-    name.endsWith('/') ||
-    name.endsWith('.')
-  )
-    throw new Error('Invalid branch name.');
+  assertBranchName(name);
   const run = await gitRunner(workspace);
   await run(create ? ['switch', '-c', name] : ['switch', name]);
   return run(['status', '--short', '--branch']);
@@ -476,4 +481,89 @@ export async function gitPush(workspace: Workspace): Promise<string> {
   const upstream = await run(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => '');
   await run(upstream.trim() ? ['push'] : ['push', '--set-upstream', 'origin', 'HEAD'], { timeout: 120_000 });
   return run(['status', '--short', '--branch']);
+}
+
+/** The repository a workspace belongs to: its top folder and the workspace's path inside it. */
+async function gitRepository(workspace: Workspace): Promise<{ root: string; prefix: string }> {
+  const run = await gitRunner(workspace);
+  const root = resolve((await run(['rev-parse', '--show-toplevel'])).trim());
+  const prefix = (await run(['rev-parse', '--show-prefix'])).trim().replace(/[\\/]+$/, '');
+  return { root, prefix };
+}
+
+/**
+ * Adds a Git worktree on a new branch (or an existing one) beside the repository, in a `<repo>.worktrees` folder
+ * named after the branch, so it is never inside the repository or app data. Returns the folder the workspace should
+ * open: the
+ * same subfolder of the new checkout as the workspace is of its repository. Hooks are disabled, as for commits:
+ * `post-checkout` would otherwise run outside command approval.
+ */
+export async function gitWorktreeAdd(
+  workspace: Workspace,
+  branch: string,
+  options: { base?: string; existing?: boolean; emptyHooksDirectory: string },
+): Promise<{ path: string; root: string }> {
+  assertBranchName(branch);
+  if (options.base !== undefined) assertRevision(options.base);
+  const { root, prefix } = await gitRepository(workspace);
+  const target = join(`${root}.worktrees`, branch.replace(/[\\/]+/g, '-'));
+  if (existsSync(target)) throw new Error(`The folder ${target} already exists.`);
+  const run = await gitRunner(workspace);
+  await run(
+    [
+      '-c',
+      `core.hooksPath=${options.emptyHooksDirectory}`,
+      'worktree',
+      'add',
+      ...(options.existing ? [target, branch] : ['-b', branch, target, ...(options.base ? [options.base] : [])]),
+    ],
+    { timeout: 120_000 },
+  );
+  return { path: prefix ? join(target, prefix) : target, root: target };
+}
+
+/** Removes a worktree folder and prunes Git's record of it. Refuses uncommitted changes unless `force`. */
+export async function gitWorktreeRemove(
+  repository: Workspace,
+  worktreeRoot: string,
+  force: boolean,
+): Promise<void> {
+  const run = await gitRunner(repository);
+  await run(['worktree', 'remove', ...(force ? ['--force'] : []), worktreeRoot], { timeout: 60_000 });
+  await run(['worktree', 'prune']);
+}
+
+/** Worktrees of the workspace's repository, as Git lists them. */
+export async function gitWorktreeList(
+  workspace: Workspace,
+): Promise<{ path: string; branch?: string; head?: string; locked: boolean; prunable: boolean }[]> {
+  const run = await gitRunner(workspace);
+  const output = await run(['worktree', 'list', '--porcelain']);
+  return output
+    .split(/\n\n+/)
+    .filter((block) => block.trim())
+    .map((block) => {
+      const fields = new Map(
+        block.split('\n').map((line) => [line.split(' ')[0], line.slice(line.indexOf(' ') + 1)] as const),
+      );
+      return {
+        path: resolve(fields.get('worktree') ?? ''),
+        branch: fields.get('branch')?.replace(/^refs\/heads\//, ''),
+        head: fields.get('HEAD')?.slice(0, 12),
+        locked: fields.has('locked'),
+        prunable: fields.has('prunable'),
+      };
+    });
+}
+
+/** Uncommitted changes in a folder, as `git status --short` lines. */
+export async function gitDirty(workspace: Workspace): Promise<string[]> {
+  const run = await gitRunner(workspace);
+  return (await run(['status', '--porcelain'])).split('\n').filter(Boolean);
+}
+
+/** A starting point for a new branch: a branch, tag or commit name, never an option. */
+function assertRevision(revision: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/~^-]{0,199}$/.test(revision) || revision.includes('..'))
+    throw new Error('Invalid base revision.');
 }

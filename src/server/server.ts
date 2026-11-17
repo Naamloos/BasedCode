@@ -94,7 +94,10 @@ import {
   workspaceChanges,
 } from "./server/files.js";
 import { Chats } from "./server/chats.js";
+import { maxMemoryLength, memoriesFor, saveMemory } from "./agent/memory.js";
+import { artifactSummary, workspaceArtifacts } from "./tools/artifactTools.js";
 import { Workspaces } from "./server/workspaces.js";
+import { Worktrees } from "./server/worktrees.js";
 import { Permissions } from "./workspace/permissions.js";
 import {
   fileTree,
@@ -428,6 +431,14 @@ const workspaces = new Workspaces({
   dataDirectory,
   assertIdle,
 });
+const worktrees = new Worktrees({
+  store,
+  events,
+  workspaces,
+  managedDirectory: join(dataDirectory, "servers"),
+  assertIdle,
+});
+tools.worktrees = worktrees;
 
 /**
  * Methods that change a chat, its history or its files. A wrapped-up chat is locked, so these are
@@ -553,6 +564,26 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
     case "workspace.open": {
       const { path } = z.object({ path: z.string().min(1) }).parse(params);
       return workspaces.open(path);
+    }
+    case "worktree.list": {
+      const { workspaceId } = workspaceInput.parse(params);
+      return worktrees.list(store.get("workspace", workspaceId));
+    }
+    case "worktree.create": {
+      const { workspaceId, branch, base } = z
+        .object({
+          workspaceId: id,
+          branch: z.string().trim().min(1).max(100),
+          base: z.string().trim().max(200).optional(),
+        })
+        .parse(params);
+      return worktrees.create(store.get("workspace", workspaceId), branch, { base: base || undefined });
+    }
+    case "worktree.remove": {
+      const { workspaceId, force } = z
+        .object({ workspaceId: id, force: z.boolean().default(false) })
+        .parse(params);
+      return worktrees.remove(workspaceId, force);
     }
     case "workspace.rename": {
       const { workspaceId, name } = z
@@ -855,6 +886,34 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       events.publish("files-changed", { path }, workspaceId);
       return null;
     }
+    case "memory.list": {
+      // Every memory, so settings can manage the ones of workspaces that are not open.
+      const { workspaceId } = z.object({ workspaceId: id.optional() }).parse(params);
+      const memories = workspaceId ? memoriesFor(store, workspaceId) : store.all("memory");
+      return memories.toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    }
+    case "memory.save": {
+      const input = z
+        .object({
+          id: id.optional(),
+          scope: z.enum(["global", "workspace"]),
+          workspaceId: id.optional(),
+          content: z.string().trim().min(1).max(maxMemoryLength),
+        })
+        .parse(params);
+      if (input.workspaceId) store.get("workspace", input.workspaceId);
+      const memory = saveMemory(store, { ...input, source: "user" });
+      events.publish("state");
+      return memory;
+    }
+    case "memory.delete": {
+      const { memoryIds } = z.object({ memoryIds: z.array(id).min(1).max(500) }).parse(params);
+      store.transaction(() => {
+        for (const memoryId of memoryIds) store.remove("memory", memoryId);
+      });
+      events.publish("state");
+      return null;
+    }
     case "skills.commands": {
       const { workspaceId } = workspaceInput.parse(params);
       return skillCommands(store.get("workspace", workspaceId));
@@ -982,6 +1041,20 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       return kind === "codex"
         ? limits.refreshCodex(global.codexPath)
         : limits.refreshClaude(global.claudePath);
+    }
+    case "limits.useReset": {
+      // Spends one of the account's usage resets; the UI asks the user to confirm first.
+      const { kind, resetId } = z
+        .object({
+          kind: z.enum(["codex", "claude"]),
+          resetId: z.string().max(200),
+        })
+        .parse(params);
+      const global = store.global();
+      return limits.useReset(kind, resetId, {
+        codexPath: global.codexPath,
+        claudePath: global.claudePath,
+      });
     }
     case "run.stop":
       await agent.stop(z.object({ runId: id }).parse(params).runId);
@@ -1387,6 +1460,67 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         throw new Error("This query is no longer active.");
       answerQuery(tool.result.queryId, value);
       return null;
+    }
+    case "artifact.list": {
+      const { workspaceId } = workspaceInput.parse(params);
+      return workspaceArtifacts(store, workspaceId).map((artifact) => ({
+        ...artifactSummary(artifact),
+        content: undefined,
+        chatId: artifact.chatId,
+      }));
+    }
+    case "artifact.get": {
+      const { artifactId, version } = z
+        .object({ artifactId: id, version: z.number().int().min(1).optional() })
+        .parse(params);
+      const artifact = store.get("artifact", artifactId);
+      if (artifact.deletedAt) throw new Error("This artifact was deleted.");
+      return {
+        ...artifactSummary(artifact, version),
+        history: artifact.versions.map((item, index) => ({
+          version: index + 1,
+          createdAt: item.createdAt,
+          note: item.note,
+        })),
+      };
+    }
+    case "artifact.rename": {
+      const { artifactId, title } = z
+        .object({ artifactId: id, title: z.string().trim().min(1).max(120) })
+        .parse(params);
+      const artifact = store.get("artifact", artifactId);
+      if (artifact.deletedAt) throw new Error("This artifact was deleted.");
+      store.put("artifact", { ...artifact, title });
+      events.publish("state");
+      return null;
+    }
+    case "artifact.delete": {
+      // Soft delete, like chats: the record stays until storage cleanup, but no tool or view reaches it.
+      const { artifactId } = z.object({ artifactId: id }).parse(params);
+      const artifact = store.get("artifact", artifactId);
+      store.put("artifact", { ...artifact, deletedAt: new Date().toISOString() });
+      events.publish("state");
+      return null;
+    }
+    case "artifact.view": {
+      // HTML artifacts render like render_ui: a sandboxed frame on this server, without network access.
+      const { artifactId, version } = z
+        .object({ artifactId: id, version: z.number().int().min(1).optional() })
+        .parse(params);
+      const artifact = store.get("artifact", artifactId);
+      if (artifact.deletedAt || artifact.mediaType !== "text/html")
+        throw new Error("Only HTML artifacts have a view.");
+      const viewId = randomBytes(24).toString("hex");
+      for (const [key, view] of views)
+        if (view.expires < Date.now()) views.delete(key);
+      views.set(viewId, {
+        html: inlineUiDocument(artifactSummary(artifact, version).content, [], ownOrigin, {}),
+        expires: Date.now() + 60 * 60 * 1000,
+        files: new Set<string>(),
+        mcp: false,
+        googleFonts: false,
+      });
+      return { url: `${ownOrigin}/views/${viewId}` };
     }
     case "app.view": {
       const { messageId } = z.object({ messageId: id }).parse(params);

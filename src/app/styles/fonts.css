@@ -1,0 +1,40 @@
+/* Allo (SIL OFL 1.1, https://github.com/joshpuckett/allo): UI typeface. Code stays on JetBrains Mono. */
+@font-face {
+  font-family: 'Allo';
+  src: url('../assets/fonts/allo/AlloVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Allo';
+  src: url('../assets/fonts/allo/Allo-Oblique.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Allo';
+  src: url('../assets/fonts/allo/Allo-MediumOblique.woff2') format('woff2');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Allo';
+  src: url('../assets/fonts/allo/Allo-SemiBoldOblique.woff2') format('woff2');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Allo';
+  src: url('../assets/fonts/allo/Allo-BoldOblique.woff2') format('woff2');
+  font-weight: 700 900;
+  font-style: italic;
+  font-display: swap;
+}

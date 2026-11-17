@@ -19,6 +19,7 @@ import {
   Upload,
   Trash2,
   Info,
+  Brain,
 } from '../../icons';
 import {
   defaultRunBudget,
@@ -41,6 +42,7 @@ import RunPolicyFields from './RunPolicyFields.vue';
 import UsageDashboard from '../usage/UsageDashboard.vue';
 import RemoteAccessPanel from './RemoteAccessPanel.vue';
 import SkillManager from './SkillManager.vue';
+import MemoryPanel from './MemoryPanel.vue';
 import LanguageServerPanel from './LanguageServerPanel.vue';
 import McpMarketplace from './McpMarketplace.vue';
 import AvatarCropper from './AvatarCropper.vue';
@@ -51,6 +53,7 @@ import KeybindingSettingsPanel from './KeybindingSettingsPanel.vue';
 const props = defineProps<{
   global: GlobalSettings;
   workspace?: Workspace;
+  workspaces?: Workspace[];
   sandboxDetail: string;
   credentials: { saved: string[]; storage: { available: boolean; detail: string } };
   limits: ProviderLimits[];
@@ -110,6 +113,7 @@ const sections: SettingsSection[] = [
   { id: 'usage', label: 'Usage', icon: BarChart3, words: 'usage cost tokens limits spend dashboard' },
   { id: 'mcp', label: 'MCP servers', icon: Plug, words: 'mcp servers marketplace registry install' },
   { id: 'servers', label: 'Language servers', icon: Server, words: 'language servers lsp typescript vue python json c# roslyn' },
+  { id: 'memory', label: 'Memory', icon: Brain, words: 'memory memories remember facts preferences forget' },
   { id: 'skills', label: 'Skills', icon: Sparkles, words: 'skills instructions slash commands claude codex agents skill.md' },
   { id: 'tools', label: 'Tools', icon: Wrench, words: 'tools enable disable files git browser terminal' },
   { id: 'system', label: 'CLIs & workspaces', icon: TerminalSquare, words: 'cli path executable codex claude cloudflared new workspace defaults' },
@@ -154,11 +158,13 @@ const toolCategories: { name: string; match: (tool: string) => boolean }[] = [
     match: (tool) =>
       ['run_command', 'run_checks', 'stop_terminal'].includes(tool) || tool.startsWith('terminal_'),
   },
-  { name: 'Git', match: (tool) => tool === 'git' || tool.startsWith('git_') },
+  { name: 'Git', match: (tool) => tool === 'git' || tool.startsWith('git_') || tool.startsWith('worktree_') },
   { name: 'Language servers', match: (tool) => tool.startsWith('language_') },
   { name: 'MCP & installs', match: (tool) => tool.includes('mcp') || tool === 'install_server' },
   { name: 'Web', match: (tool) => tool.startsWith('web_') },
   { name: 'Planning', match: (tool) => tool === 'update_plan' },
+  { name: 'Memory', match: (tool) => tool.startsWith('memory_') },
+  { name: 'Artifacts & scripts', match: (tool) => tool.startsWith('artifact_') || tool === 'run_script' },
 ];
 const toolGroups = computed(() => {
   const query = toolFilter.value.trim().toLowerCase();
@@ -452,6 +458,13 @@ async function resetTemplate() {
           <SkillManager
             v-else-if="tab === 'skills'"
             :workspace="workspace"
+          />
+          <MemoryPanel
+            v-else-if="tab === 'memory'"
+            :enabled="settings.memory?.enabled !== false"
+            :workspace="workspace"
+            :workspaces="workspaces ?? []"
+            @update:enabled="(value) => (settings.memory = { enabled: value })"
           />
           <McpMarketplace
             v-else-if="tab === 'mcp'"

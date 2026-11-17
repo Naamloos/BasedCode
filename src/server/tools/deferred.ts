@@ -44,6 +44,14 @@ export const toolGroups: Record<string, { about: string; tools: string[] }> = {
     about: 'branch, stash, stage and commit; only when the user asks',
     tools: ['git_branch', 'git_stash', 'git_stage', 'git_commit'],
   },
+  artifacts: {
+    about: 'artifacts: versioned documents (reports, plans, HTML pages, data) shown in the chat and kept with the workspace, outside its files',
+    tools: ['artifact_create', 'artifact_update', 'artifact_read', 'artifact_list', 'artifact_delete'],
+  },
+  worktrees: {
+    about: 'Git worktrees: a second checkout on its own branch, opened as a separate workspace for parallel work',
+    tools: ['worktree_list', 'worktree_create', 'worktree_remove'],
+  },
   refactor: {
     about: 'language-server rename, quick fixes and organize imports; set up language servers',
     tools: ['language_rename', 'language_code_actions', 'language_servers'],

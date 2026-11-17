@@ -118,6 +118,7 @@ export const globalSchema = z.object({
   fixFailedChecks: z.boolean().optional(),
   secretGuard: z.boolean().optional(),
   deferTools: z.boolean().optional(),
+  memory: z.object({ enabled: z.boolean() }).optional(),
   profile: z
     .object({
       name: z.string().max(100).optional(),

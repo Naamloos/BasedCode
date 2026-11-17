@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue';
 import type { LimitWindow, ProviderLimits } from '../../../shared/types';
 import { t } from '../../theme/i18n';
+import LimitResets from './LimitResets.vue';
 
 // Compact: a round usage ring for the composer that opens a popover. Full: labelled bars with reset times for the dashboard.
 const props = defineProps<{ limits?: ProviderLimits; compact?: boolean }>();
@@ -22,6 +23,10 @@ function resetText(window: LimitWindow): string {
     }),
   });
 }
+const valueText = (window: LimitWindow) =>
+  window.usedPercent === undefined
+    ? t(window.status === 'rejected' ? 'limit hit' : 'ok')
+    : `${window.usedPercent}%`;
 const tone = (window: LimitWindow) =>
   window.status === 'rejected' || (window.usedPercent ?? 0) >= 90
     ? 'danger'
@@ -49,6 +54,10 @@ const worst = computed(() =>
     undefined,
   ),
 );
+const atLimit = computed(
+  () => worst.value?.status === 'rejected' || (worst.value?.usedPercent ?? 0) >= 100,
+);
+const hasResets = computed(() => Boolean(props.limits?.resets?.length));
 const RADIUS = 7;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const dash = computed(
@@ -88,8 +97,12 @@ onBeforeUnmount(close);
     <button
       type="button"
       class="limit-ring"
-      :class="[worst && tone(worst), { open }]"
-      :title="t('{name} usage windows ({source}, {age})', { name, source: limits.source, age })"
+      :class="[worst && tone(worst), { open, 'has-resets': hasResets }]"
+      :title="
+        `${t('{name} usage windows ({source}, {age})', { name, source: limits.source, age })}${
+          hasResets ? ` · ${t('resets available')}` : ''
+        }`
+      "
       :aria-expanded="open"
       @click="toggle"
     >
@@ -134,13 +147,19 @@ onBeforeUnmount(close);
           class="limit-row"
           :class="tone(window)"
         >
-          <span class="limit-label">{{ window.label }}</span><span class="limit-track"><span :style="{ width: `${Math.min(100, window.usedPercent ?? 0)}%` }" /></span><span class="limit-value">{{
-            window.usedPercent === undefined
-              ? t(window.status === 'rejected' ? 'limit hit' : 'ok')
-              : `${window.usedPercent}%`
-          }}</span><span class="limit-reset">{{ resetText(window) }}</span>
+          <div class="limit-row-head">
+            <span class="limit-label">{{ window.label }}</span>
+            <span class="limit-reset">{{ resetText(window) }}</span>
+            <span class="limit-value">{{ valueText(window) }}</span>
+          </div>
+          <span class="limit-track"><span :style="{ width: `${Math.min(100, window.usedPercent ?? 0)}%` }" /></span>
         </div>
       </div>
+      <LimitResets
+        :limits="limits"
+        :name="name"
+        :at-limit="atLimit"
+      />
       <footer>
         <span class="muted small">{{ limits.plan ? `${t('{plan} plan', { plan: limits.plan })} · ` : ''
         }}{{ t('From {source}, {age}.', { source: limits.source.toLowerCase(), age }) }}</span>
@@ -164,15 +183,23 @@ onBeforeUnmount(close);
       class="limit-row"
       :class="tone(window)"
     >
-      <span class="limit-label">{{ window.label }}</span><span class="limit-track"><span :style="{ width: `${Math.min(100, window.usedPercent ?? 0)}%` }" /></span><span class="limit-value">{{
-        window.usedPercent === undefined
-          ? t(window.status === 'rejected' ? 'limit hit' : 'ok')
-          : `${window.usedPercent}%`
-      }}</span><span class="limit-reset">{{ resetText(window) }}</span>
+      <div class="limit-row-head">
+        <span class="limit-label">{{ window.label }}</span>
+        <span class="limit-reset">{{ resetText(window) }}</span>
+        <span class="limit-value">{{ valueText(window) }}</span>
+      </div>
+      <span class="limit-track"><span :style="{ width: `${Math.min(100, window.usedPercent ?? 0)}%` }" /></span>
     </div>
-    <p class="muted small">
-      {{ limits.plan ? `${t('{plan} plan', { plan: limits.plan })} · ` : ''
-      }}{{ t('From {source}, {age}.', { source: limits.source.toLowerCase(), age }) }}
+    <LimitResets
+      :limits="limits"
+      :name="name"
+      :at-limit="atLimit"
+    />
+    <p
+      class="limit-meta"
+      :title="t('From {source}, {age}.', { source: limits.source.toLowerCase(), age })"
+    >
+      {{ limits.plan ? `${t('{plan} plan', { plan: limits.plan })} · ` : '' }}{{ age }}
     </p>
   </div>
 </template>

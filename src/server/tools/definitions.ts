@@ -7,6 +7,7 @@ import type { PromptTimeLimit } from '../runtime/promptTimeLimit.js';
 import type { Events } from '../storage/events.js';
 import type { Store } from '../storage/store.js';
 import type { Permissions } from '../workspace/permissions.js';
+import type { Worktrees } from '../server/worktrees.js';
 
 /** A tool result carrying an image. Providers that accept images in tool results get `data` as an image; others get the text. */
 export interface ImageResult {
@@ -83,6 +84,8 @@ export interface ToolContext {
   timeLimit?: PromptTimeLimit;
   /** Called after a tool call's chat message exists and before it runs; used for rewind snapshots. */
   beforeTool?: (name: string, messageId: string) => Promise<void>;
+  /** The run's guarded tools, for run_script. Absent where scripts are not offered. */
+  scriptTools?: () => ToolDefinition[];
 }
 
 export { fileChangingTools } from '../../shared/types.js';
@@ -114,6 +117,8 @@ export interface ToolServices {
   mcp: McpConnections;
   managedDirectory: string;
   attachmentDirectory: string;
+  /** Set once the workspace services exist, which is after the tools are built. */
+  worktrees?: Worktrees;
 }
 
 /** Registration keeps argument validation and execution auditing identical for every tool. */

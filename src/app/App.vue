@@ -72,6 +72,7 @@ import {
   Shuffle,
   Undo2,
   ArrowRightLeft,
+  GitBranch,
 } from './icons';
 import ChatModeIcon from './components/common/ChatModeIcon.vue';
 import hljs from 'highlight.js';
@@ -112,7 +113,10 @@ import BrowserPreview from './components/chat/BrowserPreview.vue';
 import LimitWindows from './components/usage/LimitWindows.vue';
 import MarkdownView from './components/chat/MarkdownView.vue';
 import ToolCard from './components/chat/ToolCard.vue';
+import WorktreeDialog from './components/workspace/WorktreeDialog.vue';
 import InlineUi from './components/visuals/InlineUi.vue';
+import ArtifactView from './components/visuals/ArtifactView.vue';
+import ArtifactsPanel from './components/workspace/ArtifactsPanel.vue';
 import ImageView from './components/visuals/ImageView.vue';
 import ChartView from './components/visuals/ChartView.vue';
 import DiagramView from './components/visuals/DiagramView.vue';
@@ -277,6 +281,9 @@ const folderModal = ref(false);
 const folderPath = ref('');
 const showActions = ref(false);
 const showDiagnostics = ref(false);
+/** Artifacts open as centre tabs; `activeArtifact` is the one shown, empty while any other view is. */
+const artifactTabs = ref<{ id: string; title: string }[]>([]);
+const activeArtifact = ref('');
 // Phones get one column with the sidebars as drawers over it, closed until asked for.
 const phoneQuery = window.matchMedia('(max-width: 760px)');
 const phone = ref(phoneQuery.matches);
@@ -304,7 +311,7 @@ watch(diffWrap, (wrap) => {
     /* Preference only; ignore unavailable storage. */
   }
 });
-const rightTab = ref<'files' | 'changes' | 'context' | 'git' | 'reviews'>('files');
+const rightTab = ref<'files' | 'changes' | 'context' | 'git' | 'reviews' | 'artifacts'>('files');
 const diffScope = ref<'prompt' | 'workspace'>('prompt');
 const diffLayout = ref<'unified' | 'split'>(
   readPreference('basedcode.diffLayout') === 'split' ? 'split' : 'unified',
@@ -807,9 +814,11 @@ async function refreshSideTab() {
   if (rightTab.value === 'changes') return loadChanges();
   if (rightTab.value === 'context') return contextPanel.value?.load();
   if (rightTab.value === 'reviews') return refresh();
+  if (rightTab.value === 'artifacts') return artifactsPanel.value?.load();
   return gitPanel.value?.load();
 }
-function openSideTab(tab: 'context' | 'git' | 'reviews') {
+const artifactsPanel = ref<{ load: () => Promise<void> }>();
+function openSideTab(tab: 'context' | 'git' | 'reviews' | 'artifacts') {
   rightTab.value = tab;
   rightOpen.value = true;
 }
@@ -873,7 +882,7 @@ function hasMcpUi(message: Message): boolean {
     tool?.result?.app || legacyMcpResources(tool?.result?.result).length,
   );
 }
-const standaloneTools = new Set(['render_ui', 'show_image', 'render_chart', 'render_diagram', 'query_text', 'query_yes_no', 'query_choice', 'query_slider', 'query_color', 'query_font', 'query_radius', 'query_preview', 'query_ui']);
+const standaloneTools = new Set(['artifact_create', 'artifact_update', 'render_ui', 'show_image', 'render_chart', 'render_diagram', 'query_text', 'query_yes_no', 'query_choice', 'query_slider', 'query_color', 'query_font', 'query_radius', 'query_preview', 'query_ui']);
 /** Bookkeeping tools shown as one line instead of a tool card. Failed calls keep their card so the error shows. */
 const noteTools = new Set(['set_chat_title', 'update_plan']);
 function toolNote(message: Message): string | undefined {
@@ -1264,6 +1273,8 @@ async function selectWorkspace(id: string) {
   selected.lastOpenedAt = opened.lastOpenedAt;
   folderModal.value = false;
   fileTabs.value = [];
+  artifactTabs.value = [];
+  activeArtifact.value = '';
   workspaceId.value = id;
   localStorage.setItem('basedcode.workspace', id);
   chatId.value = chats.value[0]?.id ?? '';
@@ -1522,7 +1533,27 @@ async function openFile(path: string, reload = false) {
   else fileTabs.value[index] = file;
   selectFileTab(path);
 }
+function openArtifactTab(artifact: { id: string; title: string }) {
+  const index = artifactTabs.value.findIndex((tab) => tab.id === artifact.id);
+  if (index < 0) artifactTabs.value.push(artifact);
+  else artifactTabs.value[index] = artifact;
+  activeReview.value = '';
+  showActions.value = false;
+  showDiagnostics.value = false;
+  activeArtifact.value = artifact.id;
+}
+function closeArtifactTab(id: string) {
+  const index = artifactTabs.value.findIndex((tab) => tab.id === id);
+  if (index < 0) return;
+  artifactTabs.value.splice(index, 1);
+  if (activeArtifact.value === id) activeArtifact.value = '';
+}
+// Any other centre view taking over hides the artifact tab without closing it.
+watch([activeReview, showActions, showDiagnostics], ([review, actionsShown, diagnosticsShown]) => {
+  if (review || actionsShown || diagnosticsShown) activeArtifact.value = '';
+});
 function selectFileTab(path?: string) {
+  activeArtifact.value = '';
   activeReview.value = '';
   activeFile.value = path;
   showActions.value = false;
@@ -1895,6 +1926,48 @@ async function removeWorkspace() {
     chatId.value = '';
     preview.value = undefined;
     fileTabs.value = [];
+    artifactTabs.value = [];
+    activeArtifact.value = '';
+  }
+  await refresh();
+}
+/** The workspace the New worktree dialog branches from; empty while it is closed. */
+const worktreeFrom = ref('');
+function newWorktree() {
+  worktreeFrom.value = newChatMenu.value?.target.workspaceId ?? '';
+  newChatMenu.value = null;
+}
+async function worktreeCreated(created: Workspace) {
+  worktreeFrom.value = '';
+  await refresh();
+  await selectWorkspace(created.id);
+}
+async function removeWorktree() {
+  const id = newChatMenu.value?.target.workspaceId;
+  newChatMenu.value = null;
+  const target = state.value.workspaces.find((item) => item.id === id);
+  if (!target?.worktreeOf) return;
+  const approved = await confirmAction(
+    t('Remove worktree {name}?', { name: target.name }),
+    t(
+      'This deletes the worktree folder and its chats in BasedCode. Branch {branch} and its commits are kept.',
+      { branch: target.worktreeOf.branch },
+    ),
+    t('Remove worktree'),
+  );
+  if (!approved) return;
+  try {
+    await rpc('worktree.remove', { workspaceId: target.id });
+  } catch (failure) {
+    const message = failure instanceof Error ? failure.message : String(failure);
+    if (!message.includes('uncommitted')) throw failure;
+    const discard = await confirmAction(t('Discard uncommitted changes?'), message, t('Remove anyway'));
+    if (!discard) return;
+    await rpc('worktree.remove', { workspaceId: target.id, force: true });
+  }
+  if (workspaceId.value === target.id) {
+    workspaceId.value = '';
+    chatId.value = '';
   }
   await refresh();
 }
@@ -2106,6 +2179,13 @@ onBeforeUnmount(() => {
               <Pencil :size="14" /> {{ t('Set display name') }}
             </button>
             <button
+              v-if="!state.workspaces.find((item) => item.id === newChatMenu?.target.workspaceId)?.scratch"
+              role="menuitem"
+              @click="newWorktree"
+            >
+              <GitBranch :size="14" /> {{ t('New worktree') }}
+            </button>
+            <button
               role="menuitem"
               @click="perform(() => workspaceChatsAction('archive'))"
             >
@@ -2117,6 +2197,14 @@ onBeforeUnmount(() => {
               @click="perform(() => workspaceChatsAction('delete'))"
             >
               <Trash2 :size="14" /> {{ t('Delete all chats') }}
+            </button>
+            <button
+              v-if="state.workspaces.find((item) => item.id === newChatMenu?.target.workspaceId)?.worktreeOf"
+              role="menuitem"
+              class="danger"
+              @click="perform(removeWorktree)"
+            >
+              <Trash2 :size="14" /> {{ t('Remove worktree') }}
             </button>
             <button
               role="menuitem"
@@ -2673,7 +2761,7 @@ onBeforeUnmount(() => {
       >
         <button
           class="center-tab"
-          :aria-pressed="!preview && !showActions && !showDiagnostics && !activeReview"
+          :aria-pressed="!preview && !showActions && !showDiagnostics && !activeReview && !activeArtifact"
           @click="selectFileTab()"
         >
           {{ t('Chat') }}
@@ -2714,15 +2802,37 @@ onBeforeUnmount(() => {
           }}</span>
         </button>
         <div
+          v-for="tab in artifactTabs"
+          :key="`artifact:${tab.id}`"
+          class="file-tab"
+          :class="{ selected: activeArtifact === tab.id }"
+        >
+          <button
+            class="center-tab"
+            :title="tab.title"
+            :aria-pressed="activeArtifact === tab.id"
+            @click="openArtifactTab(tab)"
+          >
+            <FileText :size="12" /> {{ tab.title }}
+          </button>
+          <button
+            class="icon-button"
+            :aria-label="t('Close {name}', { name: tab.title })"
+            @click="closeArtifactTab(tab.id)"
+          >
+            <X :size="13" />
+          </button>
+        </div>
+        <div
           v-for="file in fileTabs"
           :key="file.path"
           class="file-tab"
-          :class="{ selected: activeFile === file.path && !showActions && !showDiagnostics && !activeReview }"
+          :class="{ selected: activeFile === file.path && !showActions && !showDiagnostics && !activeReview && !activeArtifact }"
         >
           <button
             class="center-tab"
             :title="file.path"
-            :aria-pressed="activeFile === file.path && !showActions && !showDiagnostics && !activeReview"
+            :aria-pressed="activeFile === file.path && !showActions && !showDiagnostics && !activeReview && !activeArtifact"
             @click="selectFileTab(file.path)"
           >
             {{ file.path.split('/').at(-1) }}
@@ -2749,8 +2859,19 @@ onBeforeUnmount(() => {
           {{ t('Recover restore') }}
         </button>
       </div>
+      <section
+        v-if="activeArtifact"
+        class="artifact-tab-view"
+      >
+        <ArtifactView
+          :key="activeArtifact"
+          :artifact-id="activeArtifact"
+          :workspace-id="workspaceId"
+          tall
+        />
+      </section>
       <ReviewView
-        v-if="shownReview"
+        v-else-if="shownReview"
         :review="shownReview.chat"
         :run="shownReview.run"
         :reviewed-prompt="runsById.get(shownReview.chat.reviewOf!.runId)?.prompt"
@@ -3272,6 +3393,16 @@ onBeforeUnmount(() => {
                   :size="12"
                 />{{ note }}
               </p>
+              <ArtifactView
+                v-else-if="
+                  message.role === 'tool' &&
+                    !groupedTools &&
+                    (toolName(message) === 'artifact_create' || toolName(message) === 'artifact_update')
+                "
+                :message="message"
+                :workspace-id="workspaceId"
+                @open="openArtifactTab"
+              />
               <ImageView
                 v-else-if="
                   message.role === 'tool' &&
@@ -4103,6 +4234,14 @@ onBeforeUnmount(() => {
           @click="rightTab = 'reviews'"
         >
           <MessageSquareQuote :size="14" />
+        </button><button
+          v-if="workspace"
+          :class="{ active: rightTab === 'artifacts' }"
+          :title="t('Artifacts: documents the agent wrote, with every version')"
+          :aria-label="t('Artifacts')"
+          @click="rightTab = 'artifacts'"
+        >
+          <FileText :size="14" />
         </button><span class="spacer" /><button
           class="icon-button"
           :title="t('Refresh')"
@@ -4178,6 +4317,16 @@ onBeforeUnmount(() => {
           </div>
         </article>
       </section>
+      <ArtifactsPanel
+        v-else-if="rightTab === 'artifacts' && workspace"
+        ref="artifactsPanel"
+        :workspace-id="workspace.id"
+        :chat-id="chat?.id"
+        :version="stateVersion"
+        @error="report"
+        @open="openArtifactTab"
+        @deleted="closeArtifactTab"
+      />
       <GitPanel
         v-else-if="rightTab === 'git' && workspace"
         ref="gitPanel"
@@ -4504,10 +4653,17 @@ onBeforeUnmount(() => {
       @saved="refresh"
       @error="report"
     />
+    <WorktreeDialog
+      v-if="worktreeFrom && state.workspaces.some((item) => item.id === worktreeFrom)"
+      :workspace="state.workspaces.find((item) => item.id === worktreeFrom)!"
+      @close="worktreeFrom = ''"
+      @created="(created) => perform(() => worktreeCreated(created))"
+    />
     <GlobalSettingsPanel
       v-if="globalSettingsOpen"
       :global="state.global"
       :workspace="workspace"
+      :workspaces="state.workspaces"
       :sandbox-detail="state.sandbox.detail"
       :credentials="state.credentials"
       :limits="state.limits"

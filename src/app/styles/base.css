@@ -1,6 +1,6 @@
 :root {
   /* ---- Type ---- */
-  --font-ui: 'Manrope Variable', 'Manrope', system-ui, sans-serif;
+  --font-ui: 'Allo', system-ui, sans-serif;
   --font-code: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace;
   --mono: var(--font-code);
   --fs-xs: 12px;

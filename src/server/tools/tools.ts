@@ -23,6 +23,11 @@ import { createSkillTools } from './skillTools.js';
 import { createVisualTools } from './visualTools.js';
 import { createQueryTools } from './queryTools.js';
 import { createChatTools } from './chatTools.js';
+import { createMemoryTools } from './memoryTools.js';
+import { createWorktreeTools } from './worktreeTools.js';
+import { createScriptTool } from './scriptTool.js';
+import { createArtifactTools } from './artifactTools.js';
+import type { Worktrees } from '../server/worktrees.js';
 export {
   fileChangingTools,
   readOnlyTools,
@@ -41,6 +46,9 @@ const cutNote = (length: number) =>
   `[${(length - toolResultLimit).toLocaleString()} more characters cut. Narrow the request (paths, lines, filters) for the rest.]`;
 
 export class CodingTools {
+  /** Late-bound: the worktree service depends on workspace services created after the tools. */
+  worktrees?: Worktrees;
+
   constructor(
     private readonly store: Store,
     private readonly events: Events,
@@ -172,6 +180,7 @@ ${cutNote(value.length)}`;
       mcp: this.mcp,
       managedDirectory: this.managedDirectory,
       attachmentDirectory: this.attachmentDirectory,
+      worktrees: this.worktrees,
     };
 
     const fileTools = createFileTools(context, services, definition);
@@ -181,12 +190,16 @@ ${cutNote(value.length)}`;
       ...createVisualTools(context, services, definition),
       ...createQueryTools(context, definition),
       ...createChatTools(context, services, definition),
+      ...createMemoryTools(context, services, definition),
+      ...createScriptTool(context, services, definition),
+      ...createArtifactTools(context, services, definition),
       ...fileTools,
       ...createBrowserTools(context, services, definition),
       // The desktop helper drives user32 through Windows PowerShell; other platforms get no computer tools yet.
       ...(process.platform === 'win32' ? createComputerTools(context, services, definition) : []),
       ...createTerminalTools(context, services, definition),
       ...createGitTools(context, services, definition),
+      ...createWorktreeTools(context, services, definition),
       ...createLanguageTools(context, services, definition, changed),
       ...createIntegrationTools(context, services, definition),
     ];
