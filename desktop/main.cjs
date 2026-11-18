@@ -1,5 +1,7 @@
 /* global nw */
-const environment = require('node:process').env;
+const { execFile } = require('node:child_process');
+const { join } = require('node:path');
+const { env: environment, platform } = require('node:process');
 const apiOrigin = environment.BASEDCODE_API;
 const authToken = environment.BASEDCODE_AUTH;
 const uiUrl = new URL(environment.BASEDCODE_UI);
@@ -65,16 +67,55 @@ async function refreshKeepAwake() {
   if (!streamClosed && request === powerRequest) setKeepAwake(enabled);
 }
 
-function handleEvent(event) {
-  if (event.type === 'state') void refreshKeepAwake();
-  if (event.type === 'desktop-notification') {
-    const { title, body } = event.data;
+// Keep the toast identity in sync with the Start menu shortcut in installer/basedcode.iss.
+const windowsToastCommand = Buffer.from(`
+$ErrorActionPreference = 'Stop'
+$null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime]
+$null = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType=WindowsRuntime]
+$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent('ToastText02')
+$text = $xml.GetElementsByTagName('text')
+$null = $text.Item(0).AppendChild($xml.CreateTextNode($env:BASEDCODE_TOAST_TITLE))
+$null = $text.Item(1).AppendChild($xml.CreateTextNode($env:BASEDCODE_TOAST_BODY))
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Naamloos.BasedCode').Show($toast)
+`, 'utf16le').toString('base64');
+
+function showDesktopNotification(title, body) {
+  if (platform !== 'win32') {
     globalThis.chrome?.notifications?.create({
       type: 'basic',
       iconUrl: 'icon.png',
       title,
       message: body,
     });
+    return;
+  }
+
+  const systemDirectory = join(environment.SystemRoot, 'System32');
+  execFile(
+    join(systemDirectory, 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    ['-NoProfile', '-NonInteractive', '-EncodedCommand', windowsToastCommand],
+    {
+      cwd: systemDirectory,
+      env: {
+        ...environment,
+        BASEDCODE_TOAST_TITLE: title.replaceAll('\0', ''),
+        BASEDCODE_TOAST_BODY: body.replaceAll('\0', ''),
+      },
+      timeout: 10_000,
+      windowsHide: true,
+    },
+    (error, _stdout, stderr) => {
+      if (error) console.warn('Windows toast failed:', stderr.trim() || error.code);
+    },
+  );
+}
+
+function handleEvent(event) {
+  if (event.type === 'state') void refreshKeepAwake();
+  if (event.type === 'desktop-notification') {
+    const { title, body } = event.data;
+    showDesktopNotification(title, body);
   }
   if (event.type === 'open-url' && typeof event.data === 'string') {
     const url = new URL(event.data);

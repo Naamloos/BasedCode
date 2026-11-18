@@ -61,7 +61,7 @@ Root: HKCU; Subkey: "{#LegacyUninstallKey}"; Flags: deletekey dontcreatekey
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\BasedCode"; Filename: "{app}\BasedCode.exe"
+Name: "{autoprograms}\BasedCode"; Filename: "{app}\BasedCode.exe"; AppUserModelID: "Naamloos.BasedCode"
 Name: "{autodesktop}\BasedCode"; Filename: "{app}\BasedCode.exe"; Tasks: desktopicon
 
 [Run]
