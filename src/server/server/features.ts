@@ -692,13 +692,19 @@ export class Features {
         return 'BasedCode';
       }
     };
-    this.deps.permissions.onPending = (approval) =>
+    this.deps.permissions.onPending = (approval) => {
+      if (this.store.global().desktopNotifications)
+        this.deps.events.publish('desktop-notification', {
+          title: 'BasedCode needs approval',
+          body: approval.title,
+        });
       this.notify('approvals', {
         title: `Approval needed: ${approval.title}`,
         body: `${name(approval.workspaceId)}: ${approval.detail.split('\n')[0].slice(0, 200)}`,
         priority: 'high',
         tags: ['warning'],
       });
+    };
   }
 
   runFinished(runId: string): void {

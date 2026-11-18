@@ -16,7 +16,7 @@ import {
   Undo2,
   Square,
 } from '../../icons';
-import { rpc } from '../../services/api';
+import { attachmentUrl, rpc } from '../../services/api';
 import { commandTerminal } from '../../utils/status';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Message, TerminalInfo } from '../../../shared/types';
@@ -42,6 +42,8 @@ const tool = computed(
       status: string;
       result?: {
         result?: CallToolResult;
+        attachmentId?: string;
+        name?: string;
         app?: { serverId: string };
         terminalId?: string;
         output?: unknown;
@@ -109,6 +111,13 @@ const summary = computed(() => {
 
 <template>
   <div class="tool-wrap">
+    <a
+      v-if="tool.name === 'send_user_file' && tool.result?.attachmentId"
+      class="secondary-button"
+      :href="attachmentUrl(tool.result.attachmentId, true)"
+      :download="tool.result.name"
+      referrerpolicy="no-referrer"
+    >{{ t('Download {name}', { name: tool.result.name ?? '' }) }}</a>
     <details
       class="tool-card"
       :class="tool.status"

@@ -13,7 +13,7 @@ import { Events } from '../storage/events.js';
 function category(
   title: string,
 ): 'command' | 'destructive' | 'install' | 'external' | 'integration' | 'consent' {
-  if (['Run terminal command', 'Send terminal input', 'Run verification checks'].includes(title))
+  if (['Run terminal command', 'Send terminal input', 'Run verification checks', 'Run before-run checks'].includes(title))
     return 'command';
   if (title === 'Delete file' || title === 'Delete directory') return 'destructive';
   if (title === 'Git branch' || title === 'Git stash') return 'command';
@@ -21,11 +21,15 @@ function category(
   if (title === 'Computer control') return 'command';
   if (title === 'Computer screenshot') return 'external';
   if (title.startsWith('Install ')) return 'install';
-  if (title.startsWith('MCP tool:') || title === 'Fetch web page' || (title === 'Browser automation' || title === 'Browser network origin'))
+  if (title.startsWith('MCP tool:') || title === 'Fetch web page' || title === 'Check for BasedCode update' || (title === 'Browser automation' || title === 'Browser network origin'))
     return 'external';
   // Pauses the user asked for (fallback consent, run budgets, repeated failures) are never decided by a mode.
   if (
     [
+      'Change chat sidebar',
+      'Share workspace file',
+      'Send push notification',
+      'Open workspace item',
       'Provider fallback consent',
       'Run budget reached',
       'Repeated failing tool call',

@@ -28,6 +28,19 @@ export interface ChatDeps {
   removeUnusedScratch: (workspaceId: string) => Promise<boolean>;
 }
 
+export function updateChatSidebar(
+  { store, events }: { store: Store; events: Events },
+  chat: Chat,
+  action: "pin" | "unpin" | "archive" | "unarchive",
+): Chat {
+  const updated = action === "pin" || action === "unpin"
+    ? { ...chat, pinned: action === "pin" }
+    : { ...chat, archivedAt: action === "archive" ? new Date().toISOString() : undefined };
+  store.put("chat", updated);
+  events.publish("state");
+  return updated;
+}
+
 /** Chat lifecycle RPCs: create, fork, hand off, wrap up, archive, pin, move, rename and delete. */
 export class Chats {
   constructor(private readonly deps: ChatDeps) {}
@@ -94,19 +107,11 @@ export class Chats {
   }
 
   archive(chatId: string, archived: boolean): void {
-    const { store, events } = this.deps;
-    const chat = store.get("chat", chatId);
-    store.put("chat", {
-      ...chat,
-      archivedAt: archived ? new Date().toISOString() : undefined,
-    });
-    events.publish("state");
+    updateChatSidebar(this.deps, this.deps.store.get("chat", chatId), archived ? "archive" : "unarchive");
   }
 
   pin(chatId: string, pinned: boolean): void {
-    const { store, events } = this.deps;
-    store.put("chat", { ...store.get("chat", chatId), pinned });
-    events.publish("state");
+    updateChatSidebar(this.deps, this.deps.store.get("chat", chatId), pinned ? "pin" : "unpin");
   }
 
   move(chatId: string, workspaceId: string): Chat {

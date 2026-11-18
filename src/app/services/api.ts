@@ -25,8 +25,10 @@ export function mediaUrl(workspaceId: string, path: string): string {
   return `${connection.origin}/media?${new URLSearchParams({ workspaceId, path, token: connection.token })}`;
 }
 
-export function attachmentUrl(id: string): string {
-  return `${connection.origin}/attachment?${new URLSearchParams({ id, token: connection.token })}`;
+export function attachmentUrl(id: string, download = false): string {
+  const query = new URLSearchParams({ id, token: connection.token });
+  if (download) query.set('download', '1');
+  return `${connection.origin}/attachment?${query}`;
 }
 
 /** The agent browser's live MJPEG stream. Absent over remote access: tunnels buffer streamed responses. */

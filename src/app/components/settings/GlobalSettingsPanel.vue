@@ -117,7 +117,7 @@ const sections: SettingsSection[] = [
   { id: 'skills', label: 'Skills', icon: Sparkles, words: 'skills instructions slash commands claude codex agents skill.md' },
   { id: 'tools', label: 'Tools', icon: Wrench, words: 'tools enable disable files git browser terminal' },
   { id: 'system', label: 'CLIs & workspaces', icon: TerminalSquare, words: 'cli path executable codex claude cloudflared new workspace defaults' },
-  { id: 'remote', label: 'Remote access', icon: Globe, words: 'remote access tunnel phone qr cloudflared' },
+  { id: 'remote', label: 'Remote access', icon: Globe, words: 'remote access tunnel phone qr cloudflared desktop alerts notifications keep awake sleep power' },
   { id: 'info', label: 'Info', icon: Info, words: 'info about version update check github source donate ko-fi support naamloos website' },
 ];
 const {
@@ -475,6 +475,18 @@ async function resetTemplate() {
           />
 
           <template v-else-if="tab === 'tools'">
+            <h3>SearXNG</h3>
+            <label>{{ t('SearXNG instance URL') }}
+              <input
+                v-model.trim="settings.searxngUrl"
+                type="url"
+                maxlength="2048"
+                placeholder="http://localhost:8080"
+              >
+            </label>
+            <p class="muted">
+              {{ t('Enable JSON search on your instance. Leave the URL blank to hide search from agents.') }}
+            </p>
             <h3>{{ t('BasedCode tools') }}</h3>
             <p class="muted">
               {{ t('Choose which tools the model can use. New tools are enabled by default.') }}
@@ -711,6 +723,15 @@ async function resetTemplate() {
 
           <template v-else-if="tab === 'remote'">
             <RemoteAccessPanel v-model:cloudflared-path="settings.cloudflaredPath" />
+            <h3>{{ t('Desktop alerts and power') }}</h3>
+            <label class="checkbox"><input
+              v-model="settings.desktopNotifications"
+              type="checkbox"
+            > {{ t('Show desktop notifications for approvals and questions') }}</label>
+            <label class="checkbox"><input
+              v-model="settings.keepAwakeDuringRuns"
+              type="checkbox"
+            > {{ t('Keep this computer awake during active runs') }}</label>
             <h3>{{ t('Push notifications') }}</h3>
             <p class="muted">
               {{

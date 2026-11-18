@@ -107,6 +107,7 @@ interface ActiveRun {
   /** Steering messages waiting for the local loop's next step. */
   inbox: ModelMessage[];
   injector?: MessageInjector;
+  providerRunning?: boolean;
   /** Set when the watchdog stopped the run because it went silent. */
   stalled?: boolean;
 }
@@ -186,10 +187,15 @@ export class Agent {
     return run;
   }
 
-  /**
-   * Delivers a message to a run that is already working. Local models read it before their next step; Claude Code gets it
-   * injected into its live session. Codex exec takes no input mid-turn, so the caller should queue instead.
-   */
+  canSteer(runId: string): boolean {
+    const entry = this.active.get(runId);
+    const run = this.store.get('run', runId);
+    return !!entry?.providerRunning && !!entry.kind && ['running', 'paused'].includes(run.status) &&
+      !this.compacting.has(run.chatId) && steerableKinds.includes(entry.kind) &&
+      (entry.kind !== 'claude' || !!entry.injector);
+  }
+
+  /** Deliver a user message through the active provider's steering channel. */
   steer(runId: string, prompt: string, attachmentIds: string[] = []): void {
     const entry = this.active.get(runId);
     const run = this.store.get('run', runId);
@@ -659,6 +665,12 @@ export class Agent {
         throw new Error(
           "Enable at least one provider in app settings, or in this workspace's fallback order.",
         );
+      if (!reviewing) {
+        const preflight = await this.verify(workspace, run, signal, 'before-run');
+        signal.throwIfAborted();
+        if (preflight.some((check) => check.status !== 'passed'))
+          throw new Error(`Before-run checks blocked this prompt.\n${checkSummary(preflight)}`);
+      }
       // Filled in below once guarded, so a script's tool calls pass the same guards as direct ones.
       let scriptTools: ToolDefinition[] = [];
       const allTools = this.tools.definitions({
@@ -666,6 +678,7 @@ export class Agent {
         run,
         signal,
         timeLimit,
+        canSteer: () => this.canSteer(run.id),
         scriptTools: () => scriptTools,
         // Snapshot before every call that can change files, so the run can be rewound to just before it.
         beforeTool: async (name, messageId) => {
@@ -889,9 +902,15 @@ export class Agent {
     definitions: ToolDefinition[],
     instructions: string,
   ): Promise<void> {
-    if (provider.kind === 'codex' || provider.kind === 'claude')
-      await this.subscription(provider, workspace, run, signal, definitions, instructions);
-    else await this.local(provider, run, signal, definitions, instructions);
+    const entry = this.active.get(run.id);
+    if (entry) entry.providerRunning = true;
+    try {
+      if (provider.kind === 'codex' || provider.kind === 'claude')
+        await this.subscription(provider, workspace, run, signal, definitions, instructions);
+      else await this.local(provider, run, signal, definitions, instructions);
+    } finally {
+      if (entry) entry.providerRunning = false;
+    }
   }
 
   /**
@@ -1115,21 +1134,24 @@ export class Agent {
   }
 
   /**
-   * Runs the workspace's configured lint/type-check/test commands after the agent finishes, with one approval for the set.
+   * Runs the workspace's configured checks for one phase, with one approval for the set.
    * Agent completion and check results stay separate: a denied or refused approval reports every check as skipped, not passed.
    */
   private async verify(
     workspace: Workspace,
     run: Run,
     signal: AbortSignal,
+    timing: 'before-run' | 'after-run' = 'after-run',
   ): Promise<CheckResult[]> {
-    const checks = workspace.settings.checks.filter((check) => check.command.trim());
+    const checks = workspace.settings.checks.filter(
+      (check) => check.automatic !== false && (check.timing ?? 'after-run') === timing && check.command.trim(),
+    );
     if (!checks.length) return [];
     try {
       await this.permissions.ask(
         workspace.id,
-        'Run verification checks',
-        `${checks.map((check) => `${check.name}: ${check.command}`).join('\n')}\n\nFolder: ${workspace.path}\n${this.processes.sandbox.detail}\nDeny to skip checks; skipped checks are reported as skipped, not passed.`,
+        timing === 'before-run' ? 'Run before-run checks' : 'Run verification checks',
+        `${checks.map((check) => `${check.name}: ${check.command}`).join('\n')}\n\nFolder: ${workspace.path}\n${this.processes.sandbox.detail}\n${timing === 'before-run' ? 'These checks must pass before the agent starts. Denying approval blocks the prompt.' : 'Deny to skip checks; skipped checks are reported as skipped, not passed.'}`,
         signal,
         run,
       );
@@ -1153,11 +1175,13 @@ export class Agent {
           signal,
           false,
           false,
-        )) as { terminalId: string; exitCode: number; output: string };
+          (check.timeoutSeconds ?? 120) * 1000,
+        )) as { terminalId: string; exitCode: number; output: string; timedOut?: boolean; stoppedByUser?: boolean };
         this.store.put('action', { ...action, status: 'completed' });
         results.push({
           ...check,
-          status: result.exitCode === 0 ? ('passed' as const) : ('failed' as const),
+          status: !result.timedOut && !result.stoppedByUser && result.exitCode === 0 ? ('passed' as const) : ('failed' as const),
+          timedOut: result.timedOut,
           exitCode: result.exitCode,
           terminalId: result.terminalId,
           output: cleanOutput(result.output).slice(-4_000),

@@ -27,6 +27,7 @@ import { createMemoryTools } from './memoryTools.js';
 import { createWorktreeTools } from './worktreeTools.js';
 import { createScriptTool } from './scriptTool.js';
 import { createArtifactTools } from './artifactTools.js';
+import type { Updates } from '../server/updates.js';
 import type { Worktrees } from '../server/worktrees.js';
 export {
   fileChangingTools,
@@ -58,11 +59,14 @@ export class CodingTools {
     private readonly mcp: McpConnections,
     private readonly managedDirectory: string,
     private readonly attachmentDirectory: string,
+    private readonly updates: Updates,
   ) {}
 
   /** Tools offered to the model: everything except those the user disabled in app settings. */
   definitions(context: ToolContext): ToolDefinition[] {
-    const disabled = new Set(this.store.global().disabledTools ?? []);
+    const { disabledTools, searxngUrl } = this.store.global();
+    const disabled = new Set(disabledTools ?? []);
+    if (!searxngUrl) disabled.add('web_search');
     return this.allDefinitions(context).filter((item) => !disabled.has(item.name));
   }
 
@@ -103,12 +107,20 @@ export class CodingTools {
         this.events.publish('state');
         try {
           await context.beforeTool?.(name, message.id);
+          const notifyQuestion = () => {
+            if (this.store.global().desktopNotifications)
+              this.events.publish('desktop-notification', {
+                title: 'BasedCode has a question',
+                body: 'Open the chat to reply.',
+              });
+          };
           const result = await handler(args, (result) => {
             this.store.put('message', {
               ...message,
               metadata: { tool: { name, args, status: 'running', result } },
             });
             this.events.publish('state');
+            if (name.startsWith('query_') && name !== 'query_async') notifyQuestion();
           });
           if (isImageResult(result)) {
             // The chat keeps the image's description; the pixels only go to the model.
@@ -156,6 +168,7 @@ ${cutNote(value.length)}`;
             },
           });
           this.events.publish('state');
+          if (name === 'query_async') notifyQuestion();
           return visible;
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
@@ -178,6 +191,7 @@ ${cutNote(value.length)}`;
       processes: this.processes,
       languages: this.languages,
       mcp: this.mcp,
+      updates: this.updates,
       managedDirectory: this.managedDirectory,
       attachmentDirectory: this.attachmentDirectory,
       worktrees: this.worktrees,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { open, stat, unlink, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { z } from 'zod';
 import { previewMediaType } from '../../shared/preview.js';
 import { safePath } from '../workspace/workspace.js';
@@ -86,6 +86,52 @@ export function createVisualTools(
         files: filesField,
       },
       async ({ title }) => ({ rendered: true, title }),
+    ),
+    definition(
+      'send_user_file',
+      'Attach a downloadable copy of a regular workspace file up to 20 MiB to this chat. Requires user approval.',
+      { path: z.string().min(1).max(4096) },
+      async ({ path }) => {
+        const maxBytes = 20 * 1_048_576;
+        const source = await safePath(workspace, path);
+        const info = await stat(source);
+        if (!info.isFile() || info.size > maxBytes)
+          throw new Error('Select a regular file up to 20 MiB.');
+        await permissions.ask(workspace.id, 'Share workspace file', path, context.signal, context.run);
+        const file = await open(await safePath(workspace, path), 'r');
+        try {
+          const info = await file.stat();
+          if (!info.isFile() || info.size > maxBytes)
+            throw new Error('Select a regular file up to 20 MiB.');
+          const bytes = Buffer.alloc(info.size + 1);
+          const { bytesRead } = await file.read({ buffer: bytes });
+          if (bytesRead !== info.size) throw new Error('The file changed. Try again.');
+          context.signal.throwIfAborted();
+          const attachment = {
+            id: randomUUID(),
+            name: basename(source),
+            mediaType: 'application/octet-stream',
+            size: bytesRead,
+            createdAt: new Date().toISOString(),
+          };
+          const destination = join(attachmentDirectory, attachment.id);
+          try {
+            await writeFile(destination, bytes.subarray(0, bytesRead), {
+              mode: 0o600,
+              flag: 'wx',
+              signal: context.signal,
+            });
+            store.put('attachment', attachment);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST')
+              await unlink(destination).catch(() => undefined);
+            throw error;
+          }
+          return { attachmentId: attachment.id, name: attachment.name, size: bytesRead };
+        } finally {
+          await file.close();
+        }
+      },
     ),
     definition(
       'show_image',

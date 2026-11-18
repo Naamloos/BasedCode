@@ -22,6 +22,24 @@ export const librariesField = z
 
 const pending = new Map<string, { answer: (value: unknown) => void }>();
 
+const choiceOptions = z.array(z.string().trim().min(1).max(300)).min(2).max(30);
+
+const asyncQuestions = new Map<string, { id: string; close: () => void }>();
+
+export function answerAsyncQuery(
+  runId: string,
+  queryId: string,
+  value: unknown,
+  deliver: (answer: string) => void,
+): string {
+  const question = asyncQuestions.get(runId);
+  if (question?.id !== queryId) throw new Error('This question is no longer active.');
+  const answer = z.string().trim().min(1).max(20000).parse(value);
+  deliver(answer);
+  question.close();
+  return answer;
+}
+
 export function answerQuery(queryId: string, value: unknown): void {
   const query = pending.get(queryId);
   if (!query) throw new Error('This query is no longer active.');
@@ -50,6 +68,22 @@ export function createQueryTools(context: ToolContext, definition: DefineTool): 
   });
   const question = z.string().min(1).max(1000);
   return [
+    definition('query_async', 'Ask a text or multiple-choice question and continue independent work. Options are suggestions and the user may type a custom answer. One pending question per run. The answer arrives as steering. Requires a provider that accepts live steering. Use query_text when work depends on the answer.',
+      { question, options: choiceOptions.optional() },
+      async () => {
+        const { run, signal, canSteer } = context;
+        signal.throwIfAborted();
+        if (!canSteer?.()) throw new Error('Live steering is unavailable. Use query_text to wait for an answer.');
+        if (asyncQuestions.has(run.id)) throw new Error('This run already has a pending question.');
+        const queryId = randomUUID();
+        const close = () => {
+          asyncQuestions.delete(run.id);
+          signal.removeEventListener('abort', close);
+        };
+        asyncQuestions.set(run.id, { id: queryId, close });
+        signal.addEventListener('abort', close, { once: true });
+        return { queryId };
+      }),
     definition('query_text', 'Ask an in-chat text question and wait for the answer. The answered query stays visible and inactive.',
       { question, placeholder: z.string().max(300).optional() },
       async (_args, progress) => wait(value => z.string().trim().min(1).max(20000).parse(value), progress)),

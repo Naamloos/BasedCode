@@ -19,8 +19,14 @@ test('checkSummary marks each check and its exit code', () => {
   );
 });
 
-test('checkSummary says when no checks are configured', () => {
-  assert.equal(checkSummary([]), 'No verification checks are configured for this workspace.');
+test('checkSummary says when no automatic checks ran', () => {
+  assert.equal(checkSummary([]), 'No automatic verification checks ran.');
+});
+
+test('check reports identify a timeout even if the command exited cleanly', () => {
+  const timedOut = { ...failed, exitCode: 0, timedOut: true };
+  assert.equal(checkSummary([timedOut]), '✗ test: timed out');
+  assert.match(checkFailureReport([timedOut]), /npm test, timed out/);
 });
 
 test('checkFailureReport includes only failed checks with output', () => {

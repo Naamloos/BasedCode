@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import type { LanguageConfig } from '../../../shared/types';
 import { Trash2 } from '../../icons';
 import { t } from '../../theme/themes';
+import ArgumentList from './ArgumentList.vue';
 import FormDialog from '../common/FormDialog.vue';
 import { languageServerGuides as guides, languageServerExecutable as baseName } from './languageServerGuides';
 
@@ -13,13 +14,12 @@ const props = defineProps<{
   remove: (config: LanguageConfig) => Promise<boolean>;
 }>();
 
-// Add/edit dialog over a text form: languages comma-separated, one argument per line.
 interface Draft {
   originalId?: string;
   name: string;
   languages: string;
   command: string;
-  args: string;
+  args: string[];
 }
 const draft = ref<Draft>();
 const saving = ref(false);
@@ -38,7 +38,7 @@ const parsedDraft = computed<LanguageConfig | undefined>(() => {
     name: value.name.trim(),
     languages,
     command: value.command.trim(),
-    args: value.args.split(/\r?\n/).map((arg) => arg.trim()).filter(Boolean),
+    args: [...value.args],
   };
 });
 const presets = computed(() =>
@@ -46,10 +46,10 @@ const presets = computed(() =>
 );
 function openAdd() {
   dialogError.value = '';
-  draft.value = { name: '', languages: '', command: '', args: '--stdio' };
+  draft.value = { name: '', languages: '', command: '', args: ['--stdio'] };
 }
 function usePreset(guide: (typeof guides)[number]) {
-  draft.value = { name: guide.name, languages: guide.languages.join(', '), command: guide.command, args: guide.args.join('\n') };
+  draft.value = { name: guide.name, languages: guide.languages.join(', '), command: guide.command, args: [...guide.args] };
 }
 function openEdit(config: LanguageConfig) {
   dialogError.value = '';
@@ -58,7 +58,7 @@ function openEdit(config: LanguageConfig) {
     name: config.name,
     languages: config.languages.join(', '),
     command: config.command,
-    args: config.args.join('\n'),
+    args: [...config.args],
   };
 }
 async function closeDialog() {
@@ -144,16 +144,7 @@ defineExpose({ openAdd, openEdit });
       >
       <small class="muted">{{ t('An executable on PATH, or its full path for a custom install.') }}</small>
     </label>
-    <label>{{ t('Arguments') }}
-      <textarea
-        v-model="draft.args"
-        class="code-input"
-        rows="3"
-        spellcheck="false"
-        placeholder="--stdio"
-      />
-      <small class="muted">{{ t('One argument per line.') }}</small>
-    </label>
+    <ArgumentList v-model="draft.args" />
     <p
       v-if="dialogError"
       class="error-box"

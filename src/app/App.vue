@@ -114,6 +114,7 @@ import LimitWindows from './components/usage/LimitWindows.vue';
 import MarkdownView from './components/chat/MarkdownView.vue';
 import ToolCard from './components/chat/ToolCard.vue';
 import WorktreeDialog from './components/workspace/WorktreeDialog.vue';
+import AsyncQuestion from './components/visuals/AsyncQuestion.vue';
 import InlineUi from './components/visuals/InlineUi.vue';
 import ArtifactView from './components/visuals/ArtifactView.vue';
 import ArtifactsPanel from './components/workspace/ArtifactsPanel.vue';
@@ -128,6 +129,8 @@ import ConfirmationDialog from './components/common/ConfirmationDialog.vue';
 import HandOffDialog from './components/workspace/HandOffDialog.vue';
 import FilePicker from './components/workspace/FilePicker.vue';
 import AppTooltip from './components/common/AppTooltip.vue';
+import VerificationResultView from './components/common/VerificationResult.vue';
+import type { VerificationResult } from '../shared/verification';
 import TerminalPanel from './components/workspace/TerminalPanel.vue';
 import SettingsPanel from './components/settings/SettingsPanel.vue';
 import GlobalSettingsPanel from './components/settings/GlobalSettingsPanel.vue';
@@ -884,7 +887,7 @@ function hasMcpUi(message: Message): boolean {
     tool?.result?.app || legacyMcpResources(tool?.result?.result).length,
   );
 }
-const standaloneTools = new Set(['artifact_create', 'artifact_update', 'render_ui', 'show_image', 'render_chart', 'render_diagram', 'query_text', 'query_yes_no', 'query_choice', 'query_slider', 'query_color', 'query_font', 'query_radius', 'query_preview', 'query_ui']);
+const standaloneTools = new Set(['artifact_create', 'artifact_update', 'render_ui', 'show_image', 'send_user_file', 'render_chart', 'render_diagram', 'query_async', 'query_text', 'query_yes_no', 'query_choice', 'query_slider', 'query_color', 'query_font', 'query_radius', 'query_preview', 'query_ui']);
 /** Bookkeeping tools shown as one line instead of a tool card. Failed calls keep their card so the error shows. */
 const noteTools = new Set(['set_chat_title', 'update_plan']);
 function toolNote(message: Message): string | undefined {
@@ -1259,6 +1262,30 @@ function chatRunStatus(id: string) {
 function report(failure: unknown) {
   error.value = failure instanceof Error ? failure.message : String(failure);
 }
+const rerunningChecks = ref('');
+const rerunResults = ref(new Map<string, VerificationResult[]>());
+
+function hasFailedChecks(message: Message) {
+  const checks = message.metadata.checks;
+  return message.metadata.completion && Array.isArray(checks) &&
+    checks.some((check) => check?.status === 'failed');
+}
+
+async function rerunFailedChecks(message: Message) {
+  if (rerunningChecks.value) return;
+  rerunningChecks.value = message.id;
+  rerunResults.value.delete(message.id);
+  try {
+    const results = await rpc<VerificationResult[]>('checks.run', {
+      workspaceId: workspaceId.value,
+      messageId: message.id,
+    });
+    rerunResults.value.set(message.id, results);
+  } finally {
+    rerunningChecks.value = '';
+  }
+}
+
 async function perform(operation: () => Promise<unknown>) {
   try {
     await operation();
@@ -1731,6 +1758,13 @@ onBeforeUnmount(() => {
   followChildren?.disconnect();
 });
 async function link(url: string) {
+  if (url.startsWith('#chat/')) {
+    const linked = state.value.chats.find((entry) =>
+      entry.id === url.slice('#chat/'.length) && entry.workspaceId === workspaceId.value &&
+      !entry.deletedAt && !entry.reviewOf);
+    if (linked) await selectChat(linked);
+    return;
+  }
   if (/^https?:\/\//.test(url)) {
     await rpc('external.open', { url });
     return;
@@ -3497,12 +3531,20 @@ onBeforeUnmount(() => {
                 :message="message"
               />
               <ToolCard
-                v-else-if="message.role === 'tool' && !groupedTools && toolName(message) === 'call_mcp'"
+                v-else-if="
+                  message.role === 'tool' && !groupedTools &&
+                    ['call_mcp', 'send_user_file'].includes(toolName(message) ?? '')
+                "
                 :message="message"
                 :workspace-id="workspaceId"
                 :terminals="terminals"
                 :rewindable="rewindable(message)"
                 @rewind="(id) => perform(() => previewRewind(id))"
+              />
+              <AsyncQuestion
+                v-else-if="message.role === 'tool' && toolName(message) === 'query_async'"
+                :message="message"
+                :active="state.runs.some((run) => run.id === message.runId && ['running', 'paused'].includes(run.status))"
               />
               <InlineUi
                 v-else-if="message.role === 'tool' && !groupedTools"
@@ -3676,7 +3718,26 @@ onBeforeUnmount(() => {
                         : Activity
                   "
                   :size="14"
-                /><span style="white-space: pre-line">{{ message.content }}</span>
+                />
+                <div style="min-width: 0">
+                  <span style="white-space: pre-line">{{ message.content }}</span>
+                  <div v-if="hasFailedChecks(message)">
+                    <button
+                      type="button"
+                      class="secondary-button"
+                      :disabled="!!rerunningChecks || runBusy(message.runId)"
+                      @click="perform(() => rerunFailedChecks(message))"
+                    >
+                      {{ t(rerunningChecks === message.id ? 'Running…' : 'Rerun failed checks') }}
+                    </button>
+                    <VerificationResultView
+                      v-for="result in rerunResults.get(message.id)"
+                      :key="result.terminalId"
+                      :result="result"
+                      show-name
+                    />
+                  </div>
+                </div>
               </div>
               <RunStatsLine
                 v-if="

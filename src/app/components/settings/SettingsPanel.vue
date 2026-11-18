@@ -22,6 +22,9 @@ import {
 import { rpc } from '../../services/api';
 import { approvalModes } from '../../state/approvals';
 import AppSelect from '../common/AppSelect.vue';
+import ArgumentList from './ArgumentList.vue';
+import VerificationResultView from '../common/VerificationResult.vue';
+import { sameVerificationCheck, type VerificationResult } from '../../../shared/verification';
 import { guidedMode, guidedModes } from '../../../shared/chatModes';
 import RunPolicyFields from './RunPolicyFields.vue';
 import SkillManager from './SkillManager.vue';
@@ -47,9 +50,43 @@ const {
   body: settingsBody,
   visible: visibleSections,
 } = useSettingsSearch(sections, tab);
-const checksJson = ref(JSON.stringify(settings.value.checks, null, 2));
-const editorArgs = ref(JSON.stringify(settings.value.editor.args));
+function moveCheck(index: number, direction: number) {
+  const checks = settings.value.checks;
+  const target = index + direction;
+  [checks[index], checks[target]] = [checks[target], checks[index]];
+}
+
+function setCheckTimeout(check: WorkspaceSettings['checks'][number], event: Event) {
+  const input = event.target as HTMLInputElement;
+  check.timeoutSeconds = input.value || input.validity.badInput ? input.valueAsNumber : undefined;
+}
 const error = ref('');
+type Check = WorkspaceSettings['checks'][number];
+const runningCheck = ref<Check>();
+const checkResults = new WeakMap<Check, VerificationResult>();
+
+function isSavedCheck(check: Check, index: number) {
+  const saved = props.workspace.settings.checks[index];
+  return !!saved && !!check.command.trim() && sameVerificationCheck(check, saved) &&
+    check.timeoutSeconds === saved.timeoutSeconds;
+}
+
+async function runCheck(check: Check, index: number) {
+  if (runningCheck.value || !isSavedCheck(check, index)) return;
+  runningCheck.value = check;
+  checkResults.delete(check);
+  error.value = '';
+  try {
+    const [result] = await rpc<VerificationResult[]>('checks.run', {
+      workspaceId: props.workspace.id, index, check,
+    });
+    if (result) checkResults.set(check, result);
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure);
+  } finally {
+    runningCheck.value = undefined;
+  }
+}
 
 /** The order shown: this workspace's own list when it has one, otherwise the app order (read-only). */
 const fallbackRows = computed(() =>
@@ -89,8 +126,13 @@ function setApprovalMode(value: string) {
 async function save(close = true) {
   try {
     error.value = '';
-    settings.value.checks = JSON.parse(checksJson.value);
-    settings.value.editor.args = JSON.parse(editorArgs.value);
+    if (settings.value.checks.some(({ timeoutSeconds }) =>
+      timeoutSeconds !== undefined &&
+      (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 3600),
+    )) {
+      tab.value = 'workspace';
+      throw new Error(t('Enter a whole-number timeout between 1 and 3600 seconds.'));
+    }
     await rpc('workspace.settings', { workspaceId: props.workspace.id, settings: settings.value });
     emit('saved');
     if (close) emit('close');
@@ -322,22 +364,110 @@ async function save(close = true) {
             </p>
           </template>
           <template v-else>
-            <h3>{{ t('Completion checks') }}</h3>
+            <h3>{{ t('Workspace checks') }}</h3>
             <p class="muted">
-              {{
-                t('Commands remain subject to project instructions and command approval. Example:')
-              }}
-              [{ "name": "Type check", "command": "npm run typecheck" }]
+              {{ t('Check commands are subject to command approval.') }}
             </p>
-            <label>{{ t('Checks · JSON')
-            }}<textarea
-              v-model="checksJson"
-              autocomplete="off"
-              class="code-input"
-              rows="4"
-              spellcheck="false"
-            />
-            </label>
+            <fieldset
+              v-for="(check, index) in settings.checks"
+              :key="index"
+              class="provider-card check-fields"
+            >
+              <legend>{{ check.name || t('Check {number}', { number: index + 1 }) }}</legend>
+              <div class="form-grid">
+                <label>{{ t('Name') }}
+                  <input v-model="check.name">
+                </label>
+                <label>{{ t('Command') }}
+                  <input
+                    v-model="check.command"
+                    placeholder="npm run typecheck"
+                    spellcheck="false"
+                  >
+                </label>
+                <label>{{ t('Timeout in seconds') }}
+                  <input
+                    type="number"
+                    min="1"
+                    max="3600"
+                    step="1"
+                    placeholder="120"
+                    :value="check.timeoutSeconds"
+                    @input="setCheckTimeout(check, $event)"
+                  >
+                </label>
+                <label class="check-automatic">
+                  <input
+                    type="checkbox"
+                    :checked="check.automatic !== false"
+                    @change="check.automatic = ($event.target as HTMLInputElement).checked"
+                  >
+                  {{ t('Run automatically') }}
+                </label>
+                <label v-if="check.automatic !== false">{{ t('Run timing') }}
+                  <AppSelect
+                    :model-value="check.timing ?? 'after-run'"
+                    :options="[
+                      { value: 'after-run', label: t('After the agent finishes') },
+                      { value: 'before-run', label: t('Before the agent starts') },
+                    ]"
+                    @update:model-value="(value) => (check.timing = value === 'before-run' ? 'before-run' : 'after-run')"
+                  />
+                </label>
+              </div>
+              <p
+                v-if="check.automatic !== false && check.timing === 'before-run'"
+                class="muted"
+              >
+                {{ t('The agent starts only if this check passes.') }}
+              </p>
+              <div class="check-actions">
+                <button
+                  type="button"
+                  class="secondary-button"
+                  :disabled="!!runningCheck || !isSavedCheck(check, index)"
+                  :title="isSavedCheck(check, index) ? undefined : t('Save the check before running it.')"
+                  @click="runCheck(check, index)"
+                >
+                  {{ t(runningCheck === check ? 'Running…' : 'Run now') }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  :disabled="index === 0"
+                  @click="moveCheck(index, -1)"
+                >
+                  {{ t('Move up') }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  :disabled="index === settings.checks.length - 1"
+                  @click="moveCheck(index, 1)"
+                >
+                  {{ t('Move down') }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary-button danger-action"
+                  @click="settings.checks.splice(index, 1)"
+                >
+                  {{ t('Remove') }}
+                </button>
+              </div>
+              <VerificationResultView
+                v-if="isSavedCheck(check, index) && checkResults.has(check)"
+                :result="checkResults.get(check)!"
+              />
+            </fieldset>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="settings.checks.length >= 30"
+              @click="settings.checks.push({ name: '', command: '' })"
+            >
+              {{ t('Add check') }}
+            </button>
             <label>{{
               t(
                 'When checks fail at the end of a run, give the failures back to the model for one fix-up round',
@@ -361,19 +491,14 @@ async function save(close = true) {
               "
             /></label>
             <h3>{{ t('External editor') }}</h3>
-            <div class="form-grid">
-              <label>{{ t('Executable')
-              }}<input
+            <label>{{ t('Executable') }}
+              <input
                 v-model="settings.editor.command"
                 autocomplete="off"
                 placeholder="code"
-              ></label><label>{{ t('Arguments · JSON')
-              }}<input
-                v-model="editorArgs"
-                autocomplete="off"
-                placeholder="[&quot;--goto&quot;, &quot;{file}&quot;]"
-              ></label>
-            </div>
+              >
+            </label>
+            <ArgumentList v-model="settings.editor.args" />
             <p class="muted small">
               {{
                 t(
@@ -410,6 +535,21 @@ async function save(close = true) {
 </template>
 
 <style scoped>
+.check-fields {
+  min-width: 0;
+}
+.check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.form-grid .check-automatic {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  align-self: end;
+}
 .instructions-input {
   display: block;
   width: 100%;

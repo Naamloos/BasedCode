@@ -22,7 +22,7 @@ const patterns: { name: string; pattern: RegExp }[] = [
 /** Tool calls that send data off this machine, or run commands that can. Local file edits are not scanned. */
 export function isOutboundTool(name: string): boolean {
   return (
-    ['run_command', 'terminal_input', 'web_fetch', 'call_mcp', 'install', 'install_server', 'git', 'git_commit'].includes(
+    ['run_command', 'terminal_input', 'web_fetch', 'web_search', 'send_push_notification', 'call_mcp', 'install', 'install_server', 'git', 'git_commit'].includes(
       name,
     ) || name.startsWith('browser')
   );

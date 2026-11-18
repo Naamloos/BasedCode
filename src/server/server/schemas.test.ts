@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { globalSchema } from './schemas.js';
+import { globalSchema, settingsSchema } from './schemas.js';
+
+test('workspace checks accept before-run timing and preserve legacy settings', () => {
+  const checks = settingsSchema.shape.checks;
+  const legacy = { name: 'Lint', command: 'npm run lint' };
+  const preflight = { ...legacy, timing: 'before-run', timeoutSeconds: 30 };
+  assert.deepEqual(checks.parse([legacy, preflight]), [legacy, preflight]);
+  assert.equal(checks.safeParse([{ ...legacy, timing: 'during-run' }]).success, false);
+});
 import { themeTokenNames } from '../../shared/types.js';
 
 const appearance = globalSchema.shape.appearance;

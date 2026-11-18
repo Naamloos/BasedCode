@@ -5,7 +5,7 @@ import type { Permissions } from '../workspace/permissions.js';
 import type { ToolContext } from './definitions.js';
 
 export function createPublicFetch(permissions: Permissions, store: Store, context: ToolContext) {
-  const { workspace, run, signal } = context;
+  const fetchApproved = createApprovedFetch(permissions, store, context);
   /**
    * GETs a public HTTP(S) URL after approval: private addresses, credentials and redirects are refused, and the
    * response must pass `accepts` and stay under `limit` bytes.
@@ -51,6 +51,27 @@ export function createPublicFetch(permissions: Permissions, store: Store, contex
     };
     if (!addresses.length || addresses.some((item) => !publicAddress(item.address, item.family)))
       throw new Error('Fetch is limited to public network addresses.');
+    const pinned = new URL(initial);
+    if (!isIP(host)) {
+      const address = addresses[0];
+      pinned.hostname = address.family === 6 ? `[${address.address}]` : address.address;
+    }
+    return fetchApproved(initial, purpose, accept, limit, accepts, pinned);
+  };
+}
+
+export function createApprovedFetch(permissions: Permissions, store: Store, context: ToolContext) {
+  const { workspace, run, signal } = context;
+  return async (
+    initial: URL,
+    purpose: string,
+    accept: string,
+    limit: number,
+    accepts: (contentType: string) => boolean,
+    pinned?: URL,
+  ) => {
+    if (!['http:', 'https:'].includes(initial.protocol) || initial.username || initial.password)
+      throw new Error('Fetch requires an HTTP(S) URL without embedded credentials.');
     await permissions.ask(
       workspace.id,
       purpose,
@@ -60,16 +81,11 @@ export function createPublicFetch(permissions: Permissions, store: Store, contex
     );
     const action = store.action(workspace.id, `Fetch: ${initial.hostname}`, initial.href, run);
     try {
-      const pinned = new URL(initial);
-      if (!isIP(host)) {
-        const address = addresses[0];
-        pinned.hostname = address.family === 6 ? `[${address.address}]` : address.address;
-      }
-      const response = await fetch(pinned, {
+      const response = await fetch(pinned ?? initial, {
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-        headers: { Host: initial.host, Accept: accept },
+        headers: pinned ? { Host: initial.host, Accept: accept } : { Accept: accept },
       });
       if (response.status >= 300 && response.status < 400)
         throw new Error(

@@ -68,9 +68,19 @@ export const settingsSchema = z.object({
   instructions: z.string().max(20_000).optional(),
   defaultMode: z.enum(['default', ...guidedModeIds]).optional(),
   commandRules: commandRulesSchema.optional(),
-  checks: z.array(z.object({ name: z.string(), command: z.string() })).max(30),
+  checks: z.array(z.object({
+    name: z.string(),
+    command: z.string(),
+    automatic: z.boolean().optional(),
+    timing: z.enum(['before-run', 'after-run']).optional(),
+    timeoutSeconds: z.number().int().min(1).max(3600).optional(),
+  })).max(30),
   editor: z.object({ command: z.string().min(1), args: z.array(z.string()) }),
 });
+export const verificationInput = z.union([
+  workspaceInput.extend({ index: z.number().int().min(0).max(29), check: settingsSchema.shape.checks.element }),
+  workspaceInput.extend({ messageId: id }),
+]);
 export const globalSchema = z.object({
   welcomeDismissed: z.boolean().default(false),
   providers: z.array(providerSchema).max(30),
@@ -78,6 +88,12 @@ export const globalSchema = z.object({
   language: z.enum(['en', 'nl', 'based']).default('en'),
   disabledTools: z.array(z.string().min(1).max(100)).default([]),
   mcpServers: z.array(serverConfig).max(100),
+  searxngUrl: z.string().trim().max(2048).refine((value) => {
+    if (!value) return true;
+    const url = URL.parse(value);
+    return url && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password &&
+      !value.includes('?') && !value.includes('#');
+  }, 'Enter an HTTP(S) SearXNG instance URL without credentials, a query, or a fragment.').optional(),
   mcpRegistries: z.array(mcpRegistry).max(20).optional(),
   knownMcpRegistries: z.array(z.string().max(100)).max(50).optional(),
   languageServers: z
@@ -133,6 +149,8 @@ export const globalSchema = z.object({
         .optional(),
     })
     .optional(),
+  desktopNotifications: z.boolean().optional(),
+  keepAwakeDuringRuns: z.boolean().optional(),
   notifications: z
     .object({
       enabled: z.boolean(),

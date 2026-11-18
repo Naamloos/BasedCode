@@ -2,6 +2,7 @@
   "name": "basedcode-desktop",
   "main": "index.html",
   "nodejs": true,
+  "permissions": ["notifications", "power"],
   "chromium-args": "--ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --force_high_performance_gpu",
   "icons": {
     "256": "icon.png"

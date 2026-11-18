@@ -57,6 +57,7 @@ export interface GlobalSettings {
   /** Model connections and their default fallback order. Workspaces may reorder or disable them. */
   providers: ProviderConfig[];
   mcpServers: ServerConfig[];
+  searxngUrl?: string;
   /** Registries the MCP marketplace browses. Absent: `defaultMcpRegistries`. */
   mcpRegistries?: McpRegistry[];
   /**
@@ -90,6 +91,8 @@ export interface GlobalSettings {
   fixFailedChecks?: boolean;
   /** Push notifications for approvals and finished prompts, sent to a URL the user chose (ntfy topic or JSON webhook). */
   notifications?: NotificationSettings;
+  desktopNotifications?: boolean;
+  keepAwakeDuringRuns?: boolean;
   /** Ask before tool calls that would send a likely secret off this machine. Absent: on. */
   secretGuard?: boolean;
   /**
@@ -310,7 +313,7 @@ export interface WorkspaceSettings {
   instructions?: string;
   /** Mode for new chats in this workspace. Absent: 'default'. */
   defaultMode?: ChatMode;
-  checks: { name: string; command: string }[];
+  checks: { name: string; command: string; automatic?: boolean; timeoutSeconds?: number; timing?: 'before-run' | 'after-run' }[];
   editor: { command: string; args: string[] };
 }
 

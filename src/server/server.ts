@@ -68,11 +68,14 @@ import { Limits } from "./providers/limits.js";
 import { catalog, discoverModels } from "./providers/models.js";
 import { loadPrices } from "./providers/pricing.js";
 import { Processes } from "./runtime/processes.js";
+import { failedVerificationChecks, runVerificationChecks } from "./runtime/verification.js";
+import { sameVerificationCheck } from "../shared/verification.js";
 import {
   globalSchema,
   id,
   serverConfig,
   settingsSchema,
+  verificationInput,
   workspaceInput,
 } from "./server/schemas.js";
 import { Features } from "./server/features.js";
@@ -81,7 +84,7 @@ import { Updates } from "./server/updates.js";
 import { Events } from "./storage/events.js";
 import { Store, defaultSettings } from "./storage/store.js";
 import { inlineUiDocument } from "./tools/inlineUi.js";
-import { answerQuery } from "./tools/queryTools.js";
+import { answerAsyncQuery, answerQuery } from "./tools/queryTools.js";
 import { queryDocument } from "./tools/queryUi.js";
 import { libraryFile } from "./tools/widgetLibraries.js";
 import { CodingTools } from "./tools/tools.js";
@@ -248,6 +251,7 @@ const tools = new CodingTools(
   mcp,
   join(dataDirectory, "servers"),
   attachmentDirectory,
+  updates,
 );
 const limits = new Limits(store, events);
 // Prices for estimating OpenAI model costs; runs before this finishes just go unpriced.
@@ -520,6 +524,10 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
       return features.gitMessage(params);
     case "notifications.test":
       return features.testNotification();
+    case "desktop.keepAwake":
+      return store.global().keepAwakeDuringRuns === true && store.all("run").some((run) =>
+        ["running", "paused", "awaiting_approval"].includes(run.status),
+      );
     case "state":
       return state();
     case "welcome.dismiss": {
@@ -1201,6 +1209,35 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         agent.resumeScheduling();
       }
     }
+    case "checks.run": {
+      const input = verificationInput.parse(params);
+      const workspace = store.get("workspace", input.workspaceId);
+      if (workspace.removedAt) throw new Error("This workspace was removed.");
+      let checks: typeof workspace.settings.checks;
+      if ("messageId" in input) {
+        const message = store.get("message", input.messageId);
+        const chat = store.get("chat", message.chatId);
+        if (
+          chat.workspaceId !== workspace.id || chat.deletedAt ||
+          message.role !== "system" || !message.metadata.completion || message.metadata.reverted
+        ) {
+          throw new Error("That completion summary is unavailable in this workspace.");
+        }
+        checks = failedVerificationChecks(workspace.settings.checks, message.metadata.checks);
+        if (!checks.length) throw new Error("No failed checks from this run are still configured.");
+      } else {
+        const check = workspace.settings.checks[input.index];
+        if (!check?.command.trim() || !sameVerificationCheck(check, input.check) ||
+            check.timeoutSeconds !== input.check.timeoutSeconds) {
+          throw new Error("Save the check before running it.");
+        }
+        checks = [check];
+      }
+      assertIdle(workspace.id);
+      return inMaintenance(() =>
+        runVerificationChecks({ store, events, permissions, processes }, workspace, checks, new AbortController().signal),
+      );
+    }
     case "terminal.create": {
       const { workspaceId } = workspaceInput.parse(params);
       // The user's own click authorizes their own shell (like opening an external editor); the panel labels its scope.
@@ -1450,8 +1487,23 @@ async function rpc(method: string, params: unknown): Promise<unknown> {
         .parse(params);
       const message = store.get("message", messageId);
       const tool = message.metadata.tool as
-        | { name?: string; status?: string; result?: { queryId?: string } }
+        | { name?: string; status?: string; args?: { question?: string }; result?: { queryId?: string } }
         | undefined;
+      if (tool?.name === "query_async" && tool.status === "completed" && tool.result?.queryId) {
+        if (message.metadata.reverted || store.get("chat", message.chatId).deletedAt)
+          throw new Error("This question is no longer active.");
+        const answer = answerAsyncQuery(message.runId, tool.result.queryId, value, (reply) => {
+          if (!agent.canSteer(message.runId))
+            throw new Error("This run cannot accept the answer right now.");
+          agent.steer(message.runId, `Answer to your question "${tool.args?.question}":\n${reply}`);
+        });
+        store.put("message", {
+          ...message,
+          metadata: { ...message.metadata, tool: { ...tool, result: { answer } } },
+        });
+        events.publish("state");
+        return null;
+      }
       if (
         !tool?.name?.startsWith("query_") ||
         tool.status !== "running" ||
@@ -1743,10 +1795,12 @@ async function handle(
           id.parse(url.searchParams.get("id")),
         );
         // Images and text render inline as inert content; anything else downloads rather than runs.
-        const inline =
+        const download = url.searchParams.get("download") === "1";
+        const inline = !download && (
           /^image\/(png|jpeg|gif|webp)$/.test(attachment.mediaType) ||
-          attachment.mediaType === "application/pdf";
-        const text = !inline && isTextAttachment(attachment);
+          attachment.mediaType === "application/pdf"
+        );
+        const text = !download && !inline && isTextAttachment(attachment);
         response.writeHead(200, {
           "Content-Type": text
             ? "text/plain; charset=utf-8"

@@ -5,9 +5,16 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   ListRootsRequestSchema,
+  PromptListChangedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+  type Notification,
+  ErrorCode,
+  McpError,
   type CallToolResult,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { EventEmitter, once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import type { McpServerStatus, Run, ServerConfig, Workspace } from '../../shared/types.js';
 import type { Credentials } from '../providers/credentials.js';
@@ -16,6 +23,26 @@ import { Permissions } from '../workspace/permissions.js';
 import { Processes } from '../runtime/processes.js';
 import { Store } from '../storage/store.js';
 
+async function collectPages<T>(
+  page: (cursor?: string) => Promise<{ items: T[]; nextCursor?: string }>,
+): Promise<T[]> {
+  const items: T[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const result = await page(cursor);
+    items.push(...result.items);
+    cursor = result.nextCursor;
+    if (items.length > 500 || seen.size >= 100)
+      throw new Error('MCP catalog exceeds the discovery limit.');
+    if (cursor) {
+      if (seen.has(cursor)) throw new Error('MCP server repeated a pagination cursor.');
+      seen.add(cursor);
+    }
+  } while (cursor);
+  return items;
+}
+
 interface Connection {
   client: Client;
   fingerprint: string;
@@ -23,6 +50,7 @@ interface Connection {
 
 export class McpConnections {
   private readonly connections = new Map<string, Connection>();
+  private readonly notifications = new WeakMap<Client, EventEmitter>();
   private readonly connecting = new Map<string, Promise<Client>>();
 
   constructor(
@@ -90,7 +118,8 @@ export class McpConnections {
   ): Promise<Client> {
     const key = this.key(workspace, server);
     const existing = this.connections.get(key);
-    if (existing?.fingerprint === JSON.stringify(server)) return existing.client;
+    if (existing?.client.transport && existing.fingerprint === JSON.stringify(server))
+      return existing.client;
     const pending = this.connecting.get(key);
     if (pending) return pending;
 
@@ -126,6 +155,18 @@ export class McpConnections {
           },
         },
       );
+      const notifications = new EventEmitter();
+      this.notifications.set(client, notifications);
+      const forward = async (notification: Notification) => {
+        notifications.emit('notification', notification);
+      };
+      client.fallbackNotificationHandler = forward;
+      client.setNotificationHandler(ToolListChangedNotificationSchema, forward);
+      client.setNotificationHandler(ResourceListChangedNotificationSchema, forward);
+      client.setNotificationHandler(PromptListChangedNotificationSchema, forward);
+      client.onclose = () => {
+        notifications.emit('notification', null);
+      };
       client.setRequestHandler(ListRootsRequestSchema, async () => ({
         roots: [{ uri: pathToFileURL(workspace.path).href, name: workspace.name }],
       }));
@@ -212,23 +253,78 @@ export class McpConnections {
     id: string,
     signal?: AbortSignal,
     run?: Run,
-  ): Promise<{ tools: Tool[]; resources: unknown[]; prompts: unknown[] }> {
-    const server = this.server(workspace, id);
-    const client = await this.connect(workspace, server, signal, run);
-    const tools: Tool[] = [];
+  ) {
+    const client = await this.connect(workspace, this.server(workspace, id), signal, run);
     const capabilities = client.getServerCapabilities();
-    let cursor: string | undefined;
-    if (capabilities?.tools) {
-      do {
-        const result = await client.listTools({ cursor }, { signal, timeout: 20_000 });
-        tools.push(...result.tools);
-        cursor = result.nextCursor;
-        if (tools.length > 500) throw new Error('MCP tool catalog exceeds 500 entries.');
-      } while (cursor);
+    const options = { signal, timeout: 20_000 };
+    const [tools, resources, resourceTemplates, prompts] = await Promise.all([
+      this.toolCatalog(client, signal),
+      capabilities?.resources ? collectPages(async (cursor) => {
+        const page = await client.listResources({ cursor }, options);
+        return { ...page, items: page.resources };
+      }) : [],
+      capabilities?.resources ? collectPages(async (cursor) => {
+        const page = await client.listResourceTemplates({ cursor }, options);
+        return { ...page, items: page.resourceTemplates };
+      }).catch((error: unknown) => {
+        if (error instanceof McpError && error.code === ErrorCode.MethodNotFound) return [];
+        throw error;
+      }) : [],
+      capabilities?.prompts ? collectPages(async (cursor) => {
+        const page = await client.listPrompts({ cursor }, options);
+        return { ...page, items: page.prompts };
+      }) : [],
+    ]);
+    return { tools, resources, resourceTemplates, prompts };
+  }
+
+  private async toolCatalog(client: Client, signal?: AbortSignal): Promise<Tool[]> {
+    if (!client.getServerCapabilities()?.tools) return [];
+    return collectPages(async (cursor) => {
+      const page = await client.listTools({ cursor }, { signal, timeout: 20_000 });
+      return { ...page, items: page.tools };
+    });
+  }
+
+  async resourcePage(
+    workspace: Workspace,
+    id: string,
+    kind: 'resources' | 'templates',
+    cursor: string | undefined,
+    signal: AbortSignal,
+    run: Run,
+  ) {
+    const client = await this.connect(workspace, this.server(workspace, id), signal, run);
+    if (!client.getServerCapabilities()?.resources)
+      return kind === 'resources' ? { resources: [] } : { resourceTemplates: [] };
+    const options = { signal, timeout: 20_000 };
+    return kind === 'resources'
+      ? client.listResources({ cursor }, options)
+      : client.listResourceTemplates({ cursor }, options);
+  }
+
+  async watchEvent(
+    workspace: Workspace,
+    id: string,
+    timeoutSeconds: number,
+    signal: AbortSignal,
+    run: Run,
+  ) {
+    const client = await this.connect(workspace, this.server(workspace, id), signal, run);
+    const notifications = this.notifications.get(client);
+    if (!notifications || !client.transport) throw new Error('MCP connection is closed.');
+    const timeout = AbortSignal.timeout(timeoutSeconds * 1000);
+    try {
+      const [notification] = await once(notifications, 'notification', {
+        signal: AbortSignal.any([signal, timeout]),
+      }) as [Notification | null];
+      if (!notification) throw new Error('MCP connection closed while waiting for a notification.');
+      return { notification };
+    } catch (error) {
+      signal.throwIfAborted();
+      if (timeout.aborted) return { timedOut: true };
+      throw error;
     }
-    const resources = capabilities?.resources ? (await client.listResources()).resources : [];
-    const prompts = capabilities?.prompts ? (await client.listPrompts()).prompts : [];
-    return { tools, resources, prompts };
   }
 
   async call(
@@ -245,8 +341,8 @@ export class McpConnections {
   }> {
     const server = this.server(workspace, id);
     const client = await this.connect(workspace, server, signal, run);
-    const catalog = await this.discover(workspace, id, signal, run);
-    const tool = catalog.tools.find((item) => item.name === name);
+    const tools = await this.toolCatalog(client, signal);
+    const tool = tools.find((item) => item.name === name);
     if (!tool) throw new Error('Tool is not exposed by this MCP server.');
     const uiMetadata = tool._meta?.ui;
     if (
@@ -321,7 +417,7 @@ export class McpConnections {
     const server = this.server(workspace, id);
     const client = await this.connect(workspace, server, signal, run);
     await this.permissions.ask(workspace.id, 'Read MCP resource', `${id}: ${uri}`, signal, run);
-    return client.readResource({ uri });
+    return client.readResource({ uri }, { signal, timeout: 20_000 });
   }
 
   async prompt(
@@ -334,7 +430,7 @@ export class McpConnections {
   ): Promise<unknown> {
     const server = this.server(workspace, id);
     const client = await this.connect(workspace, server, signal, run);
-    return client.getPrompt({ name, arguments: args });
+    return client.getPrompt({ name, arguments: args }, { signal, timeout: 20_000 });
   }
 
   async closeWorkspace(workspaceId: string): Promise<void> {

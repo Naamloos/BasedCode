@@ -146,6 +146,7 @@ export class Processes {
     run?: Run,
     network = false,
     background = false,
+    managedCommand = run !== undefined,
   ): Promise<TerminalInfo> {
     const { spawn } = await import('node-pty');
     const shell =
@@ -157,7 +158,7 @@ export class Processes {
       : process.platform === 'win32'
         ? ['-NoLogo', '-NoProfile']
         : [];
-    const profile = run
+    const profile = managedCommand
       ? this.launchProfile(workspace, shell, args, network)
       : { file: shell, args, env: commandEnvironment() };
     const pty = spawn(profile.file, profile.args, {
@@ -172,7 +173,7 @@ export class Processes {
       workspaceId: workspace.id,
       runId: run?.id,
       title: command?.slice(0, 70) ?? 'User terminal',
-      kind: !run ? 'user' : background ? 'service' : 'command',
+      kind: !managedCommand ? 'user' : background ? 'service' : 'command',
       cwd: workspace.path,
       owner: run ? 'agent' : 'user',
       status: 'running',
@@ -201,13 +202,13 @@ export class Processes {
   async command(
     workspace: Workspace,
     command: string,
-    run: Run,
+    run: Run | undefined,
     signal: AbortSignal,
     background: boolean,
     network: boolean,
     timeoutMs = 120_000,
   ): Promise<unknown> {
-    const info = await this.create(workspace, command, run, network, background);
+    const info = await this.create(workspace, command, run, network, background, true);
     const terminal = this.get(info.id);
     const abort = () => this.stop(info.id);
     signal.addEventListener('abort', abort, { once: true });

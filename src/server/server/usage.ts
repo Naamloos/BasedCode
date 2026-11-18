@@ -3,6 +3,7 @@ import type { Store } from "../storage/store.js";
 
 /** Totals runs into usage slices for the dashboard. Costs are provider-reported, or estimated from list prices for OpenAI models. */
 export interface UsageRange {
+  workspaceId?: string;
   /** Inclusive ISO timestamp lower bound. */
   from?: string;
   /** Exclusive ISO timestamp upper bound. */
@@ -50,6 +51,7 @@ export function usageReport(store: Store, range: UsageRange = {}): UsageReport {
     .filter(
       (run) =>
         run.stats &&
+        (!range.workspaceId || run.workspaceId === range.workspaceId) &&
         (!range.from || run.createdAt >= range.from) &&
         (!range.to || run.createdAt < range.to),
     );

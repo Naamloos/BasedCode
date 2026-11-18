@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, toRaw, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   ExternalLink,
   LoaderCircle,
@@ -132,45 +134,25 @@ async function remove(config: LanguageConfig) {
 }
 
 const editor = ref<InstanceType<typeof LanguageServerEditor>>();
+const reordering = ref(false);
 
-// Advanced: the raw list as JSON, applied explicitly so a half-typed edit never breaks the form.
-const json = ref('');
-const jsonError = ref('');
-watch(servers, (value) => (json.value = JSON.stringify(value, null, 2)), { immediate: true, deep: true });
-async function applyJson() {
-  jsonError.value = '';
-  let parsed: unknown;
+async function moveServer(index: number, direction: number) {
+  const target = index + direction;
+  if (reordering.value || busy.value || target < 0 || target >= servers.value.length) return;
+  const previous = servers.value;
+  const next = [...previous];
+  [next[index], next[target]] = [next[target], next[index]];
+  reordering.value = true;
+  error.value = notice.value = '';
+  servers.value = next;
   try {
-    parsed = JSON.parse(json.value);
-  } catch (failure) {
-    jsonError.value = failure instanceof Error ? failure.message : String(failure);
-    return;
+    if (await saveNow()) emit('saved');
+    else servers.value = previous;
+  } finally {
+    reordering.value = false;
   }
-  const valid =
-    Array.isArray(parsed) &&
-    parsed.every(
-      (item) =>
-        item &&
-        typeof item.id === 'string' &&
-        typeof item.name === 'string' &&
-        typeof item.command === 'string' &&
-        Array.isArray(item.languages) &&
-        item.languages.every((language: unknown) => typeof language === 'string') &&
-        Array.isArray(item.args) &&
-        item.args.every((arg: unknown) => typeof arg === 'string'),
-    ) &&
-    new Set(parsed.map((item: LanguageConfig) => item.id)).size === parsed.length;
-  if (!valid) {
-    jsonError.value = t('Expected an array of { id, name, languages[], command, args[] } with unique IDs.');
-    return;
-  }
-  const previous = structuredClone(toRaw(servers.value));
-  servers.value = parsed as LanguageConfig[];
-  if (await saveNow()) {
-    notice.value = t('Language-server settings saved.');
-    await discover();
-  } else servers.value = previous;
 }
+
 </script>
 
 <template>
@@ -208,6 +190,7 @@ async function applyJson() {
     <button
       type="button"
       class="primary-button"
+      :disabled="reordering"
       @click="editor?.openAdd()"
     >
       <Plus :size="14" /> {{ t('Add server') }}
@@ -238,9 +221,15 @@ async function applyJson() {
     {{ notice }}
   </p>
 
+  <p
+    v-if="servers.length > 1"
+    class="muted small"
+  >
+    {{ t('BasedCode uses the first server in the list that supports the file’s language.') }}
+  </p>
   <ul class="lsp-list">
     <li
-      v-for="row in rows"
+      v-for="(row, index) in rows"
       :key="row.config.id"
       class="lsp-card"
     >
@@ -259,10 +248,30 @@ async function applyJson() {
         >{{ t(stateLabel[row.state]) }}</span>
         <span class="lsp-actions">
           <button
+            type="button"
+            class="icon-button"
+            :title="t('Move up')"
+            :aria-label="t('Move up')"
+            :disabled="reordering || !!busy || index === 0"
+            @click="moveServer(index, -1)"
+          >
+            <ChevronUp :size="14" />
+          </button>
+          <button
+            type="button"
+            class="icon-button"
+            :title="t('Move down')"
+            :aria-label="t('Move down')"
+            :disabled="reordering || !!busy || index === rows.length - 1"
+            @click="moveServer(index, 1)"
+          >
+            <ChevronDown :size="14" />
+          </button>
+          <button
             v-if="row.state === 'installable'"
             type="button"
             class="secondary-button"
-            :disabled="!!busy || !workspace"
+            :disabled="reordering || !!busy || !workspace"
             :aria-busy="busy === row.config.id"
             @click="setup(row.config)"
           >
@@ -286,6 +295,7 @@ async function applyJson() {
             class="icon-button"
             :title="t('Edit server')"
             :aria-label="t('Edit server')"
+            :disabled="reordering"
             @click="editor?.openEdit(row.config)"
           >
             <Pencil :size="14" />
@@ -295,6 +305,7 @@ async function applyJson() {
             class="icon-button"
             :title="t('Remove server')"
             :aria-label="t('Remove server')"
+            :disabled="reordering"
             @click="remove(row.config)"
           >
             <Trash2 :size="14" />
@@ -371,41 +382,6 @@ async function applyJson() {
     }}
   </p>
 
-  <details class="provider-card">
-    <summary>{{ t('Advanced: JSON config') }}</summary>
-    <textarea
-      v-model="json"
-      class="code-input lsp-json"
-      autocomplete="off"
-      rows="14"
-      spellcheck="false"
-      :aria-label="t('Language servers · JSON')"
-    />
-    <p
-      v-if="jsonError"
-      class="error-box"
-      role="alert"
-    >
-      {{ jsonError }}
-    </p>
-    <div class="lsp-toolbar">
-      <span class="spacer" />
-      <button
-        type="button"
-        class="secondary-button"
-        @click="json = JSON.stringify(servers, null, 2); jsonError = ''"
-      >
-        {{ t('Revert') }}
-      </button>
-      <button
-        type="button"
-        class="primary-button"
-        @click="applyJson"
-      >
-        {{ t('Apply JSON') }}
-      </button>
-    </div>
-  </details>
 
   <LanguageServerEditor
     ref="editor"
@@ -556,10 +532,5 @@ async function applyJson() {
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   text-align: center;
-}
-.lsp-json {
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 10px;
 }
 </style>

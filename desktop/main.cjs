@@ -46,7 +46,36 @@ function rpc(method, params = {}) {
   });
 }
 
+const power = globalThis.chrome?.power;
+let awake = false;
+let powerRequest = 0;
+let streamClosed = false;
+
+function setKeepAwake(enabled) {
+  if (!power || enabled === awake) return;
+  if (enabled) power.requestKeepAwake('system');
+  else power.releaseKeepAwake();
+  awake = enabled;
+}
+
+async function refreshKeepAwake() {
+  if (!power || streamClosed) return;
+  const request = ++powerRequest;
+  const enabled = await rpc('desktop.keepAwake').catch(() => false);
+  if (!streamClosed && request === powerRequest) setKeepAwake(enabled);
+}
+
 function handleEvent(event) {
+  if (event.type === 'state') void refreshKeepAwake();
+  if (event.type === 'desktop-notification') {
+    const { title, body } = event.data;
+    globalThis.chrome?.notifications?.create({
+      type: 'basic',
+      iconUrl: 'icon.png',
+      title,
+      message: body,
+    });
+  }
   if (event.type === 'open-url' && typeof event.data === 'string') {
     const url = new URL(event.data);
     if (['http:', 'https:'].includes(url.protocol)) nw.Shell.openExternal(url.href);
@@ -54,12 +83,22 @@ function handleEvent(event) {
 }
 // Server-sent events over Node's HTTP client for the same Origin reason as rpc(); reconnects if the stream drops.
 let eventRequest;
-let streamClosed = false;
+let reconnectTimer;
+function reconnectEvents() {
+  if (streamClosed || reconnectTimer) return;
+  powerRequest++;
+  setKeepAwake(false);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    connectEvents();
+  }, 1000);
+}
 function connectEvents() {
   eventRequest = http.get(
     `${apiOrigin}/events`,
     { headers: { Authorization: `Bearer ${authToken}` } },
     (response) => {
+      void refreshKeepAwake();
       let buffer = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => {
@@ -82,19 +121,18 @@ function connectEvents() {
           }
         }
       });
-      response.on('end', () => {
-        if (!streamClosed) setTimeout(connectEvents, 1000);
-      });
+      response.on('end', reconnectEvents);
+      response.on('error', reconnectEvents);
     },
   );
-  eventRequest.on('error', () => {
-    if (!streamClosed) setTimeout(connectEvents, 1000);
-  });
+  eventRequest.on('error', reconnectEvents);
 }
 connectEvents();
 const stream = {
   close() {
     streamClosed = true;
+    setKeepAwake(false);
+    clearTimeout(reconnectTimer);
     eventRequest?.destroy();
   },
 };

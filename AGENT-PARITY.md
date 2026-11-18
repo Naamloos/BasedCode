@@ -43,7 +43,7 @@ Rows are in order of value for BasedCode to add, following [Priority](#priority)
 | **8** | **PR / issue tooling** | ❌ | ◐ (GitHub connector) | ✅ | ❌ | ❌ | ✅ (PRs on 7 hosts, issues) |
 | **8** | **Remote / mobile clients** | ◐ (Cloudflare tunnel, no mobile app) | ❌ | ✅ | ◐ (web pairing) | ✅ (RPC/SDK, no client) | ✅ (web, iOS, Android, SSH, Tailscale) |
 | **8** | **Secret requests** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (`request_secret`, 1Password) |
-| **9** | **Full MCP discovery and events** | ◐ (first page of resources) | ✅ | ✅ | ✅ (+ resources, event watch) | ✅ (built-in extension) | ✅ |
+| **9** | **Full MCP discovery and events** | ✅ (cursor pagination, templates, event watch) | ✅ | ✅ | ✅ (+ resources, event watch) | ✅ (built-in extension) | ✅ |
 | 1.4.0 | Managed worktrees | ✅ (`worktree_*`, sidebar menu) | ✅ | ✅ | ✅ (`worktree_*`) | ❌ | ✅ (per thread, merge back) |
 | 1.4.0 | Model-written tool orchestration | ✅ (`run_script`, QuickJS sandbox) | ✅ (`exec`) | ❌ | ✅ (`execute`) | ✅ (`codemode`) | ❌ |
 | 1.4.0 | Persistent memory | ✅ (`memory_*`, Settings → Memory) | ❌ | ✅ | ❌ | ❌ | ❌ |
@@ -156,7 +156,7 @@ BasedCode has `update_plan` and approvals for each action, but no mode that bloc
 - **[Codex]** An asynchronous user-input request: the question stays open while other work continues, and the answer arrives later.
 - **[T3]** Has `user_input` requests and `promote_to_steer`; the source doesn't show whether they block.
 
-BasedCode's query tools wait on a promise until the user submits or cancels.
+BasedCode supports `query_async` for live-steerable providers. One text or multiple-choice question can stay open per run while the agent works. Replies arrive through steering. Blocking query tools remain available.
 
 Evidence: [query lifecycle](src/server/tools/queryTools.ts).
 
@@ -178,7 +178,7 @@ Evidence: [project instructions](src/server/agent/instructions.ts).
 - **[pi]** Extensions get lifecycle events (`src/core/extensions/types.ts`): `tool_call`, `tool_result`, `before_agent_start`, `turn_start`/`turn_end`, `before_provider_request`, `session_before_compact`, `session_before_fork`, `session_tree` and more. They can block tool calls, add tools and change the UI, and they ship as npm/git packages. Project trust gates extensions found in `.pi/`.
 - **[Codex]** Plugins exist, but no user hook lifecycle was observed.
 
-BasedCode has no user-defined hook points around tool calls or run events and no plugin bundles. Approvals cover safety, but not automation such as "lint after every edit". [pi]'s event list is a good reference for which hook points matter.
+BasedCode supports workspace checks before and after agent runs. Before-run checks use the command approval flow and must pass before the agent starts. Tool-call hooks and plugin bundles are still open. [pi]'s event list is a reference for additional hook points.
 
 ### 8. Scheduling, goals and continuation — [Codex] [Claude] [OpenCode] [T3]
 
@@ -211,7 +211,7 @@ Evidence: [Git tools](src/server/tools/gitTools.ts), [workspace RPCs](src/server
 - **[OpenCode]** `list_mcp_resources`, `read_mcp_resource` and **`watch_mcp_event`** (`tool/plugin/mcp-events.ts`), so the agent can wait for an MCP server's notifications.
 - **[pi]** Tools and resources over stdio or streamable HTTP (`docs/mcp.md`). **[T3]** Bridges MCP into ACP agents (`AcpMcpStdioBridge.ts`) and renders MCP apps (`apps/server/src/mcpApps`).
 
-BasedCode's `McpConnections.discover` paginates tools, but fetches only the first page of resources and prompts, never lists templates, and can't watch for server events. Reading a known URI works.
+BasedCode paginates tools, resources, resource templates, and prompts. Agents can request a resource or template page with an opaque cursor, read a known URI, and wait for the next server notification with a timeout.
 
 Evidence: [`McpConnections.discover`](src/server/integrations/mcp.ts).
 
@@ -252,7 +252,7 @@ Evidence: [browser tools](src/server/tools/browserTools.ts).
 - **[T3]** Thread tools (`mcp/toolkits/thread`): rename, pin, unpin, snooze, settle, archive, mark unread, regenerate title; a message tool that posts Markdown; access checks per thread (`threadAccess.ts`, `McpToolAccess.ts`).
 - **[OpenCode]** `session_rename`, `session_move`.
 
-The BasedCode app already creates, forks, archives, pins, moves, hands off and steers chats, but the agent can only rename the current one. This is an exposure gap. [T3]'s `McpToolAccess` (capabilities such as `reads`, `writes_threads`, `starts_threads`, plus `capability_denied`) is a worked example of putting access checks on these tools.
+The BasedCode app already creates, forks, archives, pins, moves, hands off and steers chats. Agents can rename the current chat, search and read earlier chats in the workspace, and pin, unpin, archive or unarchive workspace chats with explicit approval. Other session actions remain an exposure gap. [T3]'s `McpToolAccess` (capabilities such as `reads`, `writes_threads`, `starts_threads`, plus `capability_denied`) is a worked example of putting access checks on these tools.
 
 Evidence: [RPC dispatch](src/server/server.ts), [chat tools](src/server/tools/chatTools.ts).
 
@@ -286,13 +286,13 @@ BasedCode has no way for the agent to ask for a secret without the secret passin
 
 | Utility | From | BasedCode status |
 | --- | --- | --- |
-| Agent sends a push notification | [Claude] `PushNotification` | Notifies on run events only. |
-| Open in editor, reveal in file manager, keep awake | [Claude] `mcp__ccd_host__*` | Missing. |
+| Agent sends a push notification | [Claude] `PushNotification` | `send_push_notification` supports desktop alerts and the configured push destination with explicit approval. Desktop alerts can also notify about pending approvals and agent questions. |
+| Open in editor, reveal in file manager, keep awake | [Claude] `mcp__ccd_host__*` | `open_workspace_file` supports editor and file manager actions with explicit approval. The desktop app can opt in to keeping the host awake during active runs. |
 | Add or switch working directory | [Claude] `mcp__ccd_directory__*`, [OpenCode] `session_move` | Missing. |
-| Query usage and limits | [Claude] `get_usage`, [Codex], [OpenCode] `usage-limits.ts` | Usage is tracked but not exposed as a tool. |
+| Query usage and limits | [Claude] `get_usage`, [Codex], [OpenCode] `usage-limits.ts` | `get_usage` reports workspace totals and cached limits for enabled provider kinds. |
 | Change settings with approval | [Claude] `mcp__ccd_settings__*` | Missing. |
-| Surface a file to the user | [Claude] `SendUserFile`, [T3] attachment toolkit | `show_image` covers images only. |
-| Screen capture, update check, voice, chat sharing | [Codex], [OpenCode] `voice.ts`, [T3] `speech/` | Update and usage RPCs exist but are not agent tools. |
+| Surface a file to the user | [Claude] `SendUserFile`, [T3] attachment toolkit | `send_user_file` attaches a downloadable workspace file with explicit approval. |
+| Screen capture, update check, voice, chat sharing | [Codex], [OpenCode] `voice.ts`, [T3] `speech/` | `check_app_update` checks for updates after approval. `computer_screenshot` captures the Windows desktop with approval. Voice and chat sharing are open. |
 
 ## Optional ecosystem gaps
 
@@ -321,7 +321,7 @@ BasedCode discovers skill folders under `.basedcode`, `.claude`, `.codex` and `.
 6. **Tool orchestration** (gap 3): three products have it; follow [pi]'s pattern so nested calls go through the normal pipeline.
 7. **Hooks/extensions** (gap 7) and **memory** (gap 6).
 8. **Session tools** (gap 14) with [T3]-style capability checks, then PRs/issues (15), remote clients (16) and secrets (17).
-9. MCP events (10), image generation (11), artifacts (12) and devices (13): depend on product scope.
+9. Image generation (11), artifacts (12) and devices (13): depend on product scope. MCP discovery and event watching (10) are available.
 
 The comparison also shows where BasedCode should stay different. [pi] has no approvals and points users to containers, while [T3] gives agents shared tools but leaves file and shell access to each provider. BasedCode is the only one here where every side effect goes through one approval and checkpoint path. New features should keep that true.
 

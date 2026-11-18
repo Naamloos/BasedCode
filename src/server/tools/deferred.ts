@@ -34,7 +34,7 @@ export const toolGroups: Record<string, { about: string; tools: string[] }> = {
   },
   visuals: {
     about: 'show the user an interactive HTML preview, chart, Mermaid diagram or image in the chat',
-    tools: ['render_ui', 'render_chart', 'render_diagram', 'show_image'],
+    tools: ['render_ui', 'render_chart', 'render_diagram', 'show_image', 'send_user_file'],
   },
   design: {
     about: 'ask the user with a color, font, corner-radius or slider picker, a choice with a live hover preview, or a custom HTML question',
@@ -58,7 +58,7 @@ export const toolGroups: Record<string, { about: string; tools: string[] }> = {
   },
   mcp: {
     about: 'MCP integrations: list servers and their tools, call them, read resources, install a server',
-    tools: ['list_mcp', 'call_mcp', 'read_mcp_resource', 'get_mcp_prompt', 'install_server'],
+    tools: ['list_mcp', 'list_mcp_resources', 'watch_mcp_event', 'call_mcp', 'read_mcp_resource', 'get_mcp_prompt', 'install_server'],
   },
   skills: {
     about: 'workspace and global skills: list, activate, create',

@@ -4,6 +4,7 @@ export interface CheckResult {
   command: string;
   status: 'passed' | 'failed' | 'skipped';
   exitCode?: number;
+  timedOut?: boolean;
   terminalId?: string;
   /** Tail of the command output; dropped before the result is stored on the completion message. */
   output?: string;
@@ -17,9 +18,10 @@ const statusMark: Record<CheckResult['status'], string> = {
 
 /** One line per check for the run's completion message. */
 export function checkSummary(checks: CheckResult[]): string {
-  if (!checks.length) return 'No verification checks are configured for this workspace.';
+  if (!checks.length) return 'No automatic verification checks ran.';
 
   const lines = checks.map((check) => {
+    if (check.timedOut) return `✗ ${check.name}: timed out`;
     const exit = check.exitCode !== undefined ? ` (exit ${check.exitCode})` : '';
     return `${statusMark[check.status]} ${check.name}: ${check.status}${exit}`;
   });
@@ -30,7 +32,7 @@ export function checkSummary(checks: CheckResult[]): string {
 export function checkFailureReport(checks: CheckResult[]): string {
   const failed = checks.filter((check) => check.status === 'failed');
   const sections = failed.map(
-    (check) => `## ${check.name} (${check.command}, exit ${check.exitCode})\n${check.output ?? ''}`,
+    (check) => `## ${check.name} (${check.command}, ${check.timedOut ? 'timed out' : `exit ${check.exitCode}`})\n${check.output ?? ''}`,
   );
   return sections.join('\n\n');
 }
